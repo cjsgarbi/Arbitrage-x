@@ -76,7 +76,7 @@ TRADING_CONFIG = {
     'max_slippage': Decimal('0.002'),  # Aumentado para 0.2%
     'order_type': 'LIMIT',
     'time_in_force': 'IOC',  # Mudado para IOC para execução mais rápida
-    'test_mode': True,
+    'test_mode': True,       # Força modo de teste
     'fee_rate': 0.001,      # Taxa por operação (0.1%)
     'min_profit': 0.2,      # Lucro mínimo para considerar oportunidade
     'max_spread': 0.02,     # Spread máximo aceitável (2%)

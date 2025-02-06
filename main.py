@@ -71,11 +71,12 @@ async def main():
 
         # Prepara configuração
         config = {
-            'BINANCE_API_KEY': os.getenv('BINANCE_API_KEY_TESTNET', '').strip().replace('"', ''),
-            'BINANCE_API_SECRET': os.getenv('BINANCE_API_SECRET_TESTNET', '').strip().replace('"', ''),
+            'BINANCE_API_KEY': os.getenv('BINANCE_API_KEY', '').strip().replace('"', ''),
+            'BINANCE_API_SECRET': os.getenv('BINANCE_API_SECRET', '').strip().replace('"', ''),
             'SIMULATION_MODE': args.simulation,
             'SAVE_DATA': os.getenv('SAVE_DATA', 'false').lower() == 'true',
-            'DEBUG': args.debug
+            'DEBUG': args.debug,
+            'TEST_MODE': True  # Força modo de teste
         }
 
         if not config['BINANCE_API_KEY'] or not config['BINANCE_API_SECRET']:

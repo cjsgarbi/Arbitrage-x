@@ -59,7 +59,8 @@ class BotCore:
             self.exchange = AsyncClient(
                 api_key=self.config['BINANCE_API_KEY'],
                 api_secret=self.config['BINANCE_API_SECRET'],
-                testnet=True,
+                testnet=True,  # Força uso da Testnet
+                tld='com',     # Importante para Testnet
                 recv_window=60000  # Aumenta a janela de tempo para 60 segundos
             )
 
