@@ -1,0 +1,19 @@
+#!/usr/bin/env ruby
+
+require 'bundler/setup'
+require 'dotenv'
+require_relative '../lib/zmq_bridge'
+
+# Carrega variáveis de ambiente
+Dotenv.load
+
+# Configura signal handlers
+Signal.trap("INT") do
+  puts "\nEncerrando executor de trades..."
+  exit
+end
+
+# Iniciar o executor
+puts "Iniciando executor de trades..."
+bridge = ZMQBridge.new
+bridge.listen_for_opportunities 

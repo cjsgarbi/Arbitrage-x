@@ -1,4 +1,49 @@
-ccxt
-networkx[default]
+# Core Dependencies - Essenciais para Arbitragem
+python-binance==1.0.17  # Cliente Binance
+websockets==11.0.3     # Para conexões WebSocket
+aiohttp==3.8.5         # Para requisições HTTP assíncronas
 
-OctoBot-Commons>=1.9, <1.10
+# Análise de Grafos
+networkx==3.1
+
+# Configuração
+python-dotenv==1.0.0   # Para carregar variáveis de ambiente
+
+# Comunicação entre Serviços
+pyzmq==25.1.1          # Para comunicação com Ruby executor
+pymongo>=4.5.0         # Para conexão com MongoDB
+
+# Development (opcional, remova se não for desenvolver)
+pytest==7.4.2
+pytest-asyncio==0.21.1
+pytest-cov==4.1.0
+
+# Novas dependências
+rich==13.5.2           # Para formatação rica no terminal
+asyncio==3.4.3
+cryptography==41.0.7
+requests==2.31.0
+pandas==2.1.0          # Para análise de dados
+numpy==1.25.2          # Para cálculos numéricos
+ta==0.11.0  # Análise técnica
+ccxt==4.1.87  # APIs de exchanges
+python-telegram-bot==20.5  # Notificações (opcional)
+SQLAlchemy==2.0.25
+
+# Utilitários
+dataclasses>=0.6       # Para classes de dados
+typing-extensions>=4.7.1  # Para tipos avançados
+python-dateutil>=2.8.2  # Para manipulação de datas
+colorama>=0.4.6        # Para colorir output no terminal
+tabulate>=0.9.0        # Para formatar tabelas no terminal
+
+# Logging e monitoramento
+structlog>=23.1.0      # Para logging estruturado
+
+# Dependências do banco de dados
+aiosqlite==0.19.0
+
+# Dependências de desenvolvimento
+black==23.7.0
+flake8==6.1.0
+mypy==1.5.1
