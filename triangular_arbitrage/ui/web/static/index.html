@@ -12,11 +12,19 @@
         <div class="mb-6">
             <div class="flex justify-between items-center mb-4">
                 <h1 class="text-2xl font-bold text-gray-800 dark:text-white">Arbitragem Triangular</h1>
-                <div class="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
-                    <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                    </svg>
-                    <span id="last-update">Atualizado: --:--:--</span>
+                <div class="flex items-center gap-4">
+                    <div id="exchange-status" class="flex items-center gap-2 text-sm">
+                        <svg class="h-4 w-4 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                        </svg>
+                        <span class="text-red-500 font-medium">Desconectado</span>
+                    </div>
+                    <div class="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
+                        <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                        </svg>
+                        <span id="last-update">Atualizado: --:--:--</span>
+                    </div>
                 </div>
             </div>
 
@@ -118,10 +126,75 @@
                 </div>
             </div>
         </div>
+
+        <!-- Operações Recentes -->
+        <div class="shadow-lg mb-6">
+            <div class="bg-gradient-to-r from-purple-600 to-purple-800 p-6">
+                <h2 class="text-white font-bold">Operações Recentes</h2>
+            </div>
+            <div class="bg-white dark:bg-gray-800 p-4">
+                <div id="recent-operations" class="space-y-4">
+                    <!-- Preenchido dinamicamente -->
+                </div>
+            </div>
+        </div>
     </div>
 
     <script type="module" src="/static/js/pairs-monitor.js"></script>
     <script>
+        // Dados das operações recentes
+        const recentOperations = [
+            {
+                id: 1,
+                pairs: ['BTC/USDT', 'ETH/BTC', 'ETH/USDT'],
+                profit: 0.025,
+                volume24h: 15000000,
+                status: 'completed',
+                execution: '1.2s',
+                timestamp: new Date()
+            },
+            {
+                id: 2,
+                pairs: ['BNB/USDT', 'BTC/BNB', 'BTC/USDT'],
+                profit: -0.015,
+                volume24h: 8000000,
+                status: 'error',
+                error: 'Insuficiência de liquidez',
+                execution: '1.5s',
+                timestamp: new Date()
+            }
+        ];
+
+        // Atualiza operações recentes
+        function updateRecentOperations() {
+            const container = document.getElementById('recent-operations');
+            container.innerHTML = recentOperations.map(op => `
+                <div class="rounded border p-4 hover:shadow-md transition-shadow bg-white dark:bg-gray-700">
+                    <div class="flex items-start justify-between">
+                        <div class="space-y-2">
+                            <div class="flex items-center gap-2">
+                                <svg class="h-5 w-5 ${op.status === 'completed' ? 'text-green-500' : 'text-red-500'}" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="${op.status === 'completed' ? 'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z' : 'M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z'}" />
+                                </svg>
+                                <span class="font-medium text-white">${op.pairs.join(' → ')}</span>
+                            </div>
+                            ${op.error ? `<p class="text-sm text-red-500 bg-red-50 dark:bg-red-900 p-2 rounded">${op.error}</p>` : ''}
+                            <div class="flex gap-4 text-sm text-gray-400">
+                                <span>Volume: $${(op.volume24h / 1000000).toFixed(1)}M</span>
+                                <span>Execução: ${op.execution}</span>
+                                <span>${op.timestamp.toLocaleTimeString()}</span>
+                            </div>
+                        </div>
+                        <span class="px-2 py-1 text-xs font-semibold rounded ${
+                            op.profit > 0 ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                        }">
+                            ${op.profit > 0 ? '+' : ''}${(op.profit * 100).toFixed(3)}%
+                        </span>
+                    </div>
+                </div>
+            `).join('');
+        }
+
         // Dados do estado inicial
         const arbitrageData = [
             {
@@ -300,17 +373,44 @@
             document.getElementById('routes-badge').textContent = `${arbitrageData.length} Rotas Ativas`;
         }
 
+        // Atualiza status da conexão
+        let isConnected = false;
+        function updateConnectionStatus() {
+            const statusEl = document.getElementById('exchange-status');
+            if (isConnected) {
+                statusEl.innerHTML = `
+                    <svg class="h-4 w-4 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <span class="text-green-500 font-medium">Conectado</span>
+                `;
+            } else {
+                statusEl.innerHTML = `
+                    <svg class="h-4 w-4 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                    </svg>
+                    <span class="text-red-500 font-medium">Desconectado</span>
+                `;
+            }
+        }
+
         // Atualiza interface a cada 15 segundos
         setInterval(() => {
             const now = new Date();
             document.getElementById('last-update').textContent = `Atualizado: ${now.toLocaleTimeString()}`;
             updateMetrics();
             updateArbitrageTable();
+            updateRecentOperations();
+            // Simula alteração do status aleatoriamente (remover em produção)
+            isConnected = Math.random() > 0.5;
+            updateConnectionStatus();
         }, 15000);
 
         // Inicialização
         updateMetrics();
         updateArbitrageTable();
+        updateRecentOperations();
+        updateConnectionStatus();
 
         // Configura dark mode
         if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
