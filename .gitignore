@@ -135,3 +135,55 @@ cython_debug/
 # env
 .env
 .env.local
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environment
+venv/
+ENV/
+env/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Logs
+logs/
+*.log
+
+# Ambiente
+.env
+.env.local
+.env.*.local
+
+# Ruby
+ruby_executor/.bundle/
+ruby_executor/vendor/
+*.gem
+.ruby-version
+.ruby-gemset
+
+# Outros
+.DS_Store
+Thumbs.db

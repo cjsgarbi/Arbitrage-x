@@ -1,49 +1,58 @@
 # Core Dependencies - Essenciais para Arbitragem
-python-binance==1.0.17  # Cliente Binance
-websockets==11.0.3     # Para conexões WebSocket
-aiohttp==3.8.5         # Para requisições HTTP assíncronas
+python-binance==1.0.19     # Cliente Binance
+aiohttp>=3.8.5            # Para requisições HTTP assíncronas
+aiodns>=3.0.0            # Para DNS assíncrono no Windows
+aiosignal>=1.3.1         # Necessário para aiohttp
+yarl>=1.9.2              # Necessário para aiohttp
+async-timeout>=4.0.3     # Necessário para aiohttp
 
-# Análise de Grafos
-networkx==3.1
+# Web Server e Dashboard
+fastapi>=0.104.1         # Framework web assíncrono
+uvicorn[standard]>=0.24.0  # Servidor ASGI com suporte SSL
+websockets>=11.0.3       # Para WebSocket
+jinja2>=3.1.2           # Para templates HTML
+python-multipart>=0.0.6  # Para form data
+aiofiles>=23.2.1        # Para servir arquivos estáticos
 
-# Configuração
-python-dotenv==1.0.0   # Para carregar variáveis de ambiente
+# Autenticação e Segurança
+python-jose[cryptography]>=3.3.0  # Para JWT
+passlib[bcrypt]>=1.7.4   # Para hash de senhas
+bcrypt>=4.0.1           # Para criptografia de senhas
 
-# Comunicação entre Serviços
-pyzmq==25.1.1          # Para comunicação com Ruby executor
-pymongo>=4.5.0         # Para conexão com MongoDB
+# Banco de Dados
+aiosqlite>=0.19.0       # SQLite assíncrono
+SQLAlchemy>=2.0.25      # ORM
 
-# Development (opcional, remova se não for desenvolver)
-pytest==7.4.2
-pytest-asyncio==0.21.1
-pytest-cov==4.1.0
+# Interface e Visualização
+rich>=13.5.2            # Para formatação rica no terminal
+pandas>=2.1.0           # Para análise de dados
+numpy>=1.25.2           # Para cálculos numéricos
+ta>=0.11.0             # Análise técnica
 
-# Novas dependências
-rich==13.5.2           # Para formatação rica no terminal
-asyncio==3.4.3
-cryptography==41.0.7
-requests==2.31.0
-pandas==2.1.0          # Para análise de dados
-numpy==1.25.2          # Para cálculos numéricos
-ta==0.11.0  # Análise técnica
-ccxt==4.1.87  # APIs de exchanges
-python-telegram-bot==20.5  # Notificações (opcional)
-SQLAlchemy==2.0.25
+# Configuração e Ambiente
+python-dotenv>=1.0.0    # Para variáveis de ambiente
+pydantic>=2.0.0        # Para validação de dados
 
 # Utilitários
-dataclasses>=0.6       # Para classes de dados
-typing-extensions>=4.7.1  # Para tipos avançados
+dataclasses>=0.6        # Para classes de dados
+typing-extensions>=4.7.1 # Para tipos avançados
 python-dateutil>=2.8.2  # Para manipulação de datas
-colorama>=0.4.6        # Para colorir output no terminal
-tabulate>=0.9.0        # Para formatar tabelas no terminal
+colorama>=0.4.6         # Para colorir output no terminal
+tabulate>=0.9.0         # Para formatar tabelas no terminal
 
-# Logging e monitoramento
-structlog>=23.1.0      # Para logging estruturado
+# Logging e Monitoramento
+structlog>=23.1.0       # Para logging estruturado
 
-# Dependências do banco de dados
-aiosqlite==0.19.0
+# Opcional - Para Desenvolvimento
+pytest>=7.4.2
+pytest-asyncio>=0.21.1
+pytest-cov>=4.1.0
+black>=23.7.0           # Formatador de código
+flake8>=6.1.0          # Linter
+mypy>=1.5.1            # Verificador de tipos estáticos
 
-# Dependências de desenvolvimento
-black==23.7.0
-flake8==6.1.0
-mypy==1.5.1
+# Removidos por não serem mais necessários
+# pyzmq - Não usamos mais Ruby executor
+# pymongo - Mudamos para SQLite
+# networkx - Não usamos mais análise de grafos
+# python-telegram-bot - Opcional, pode ser instalado separadamente

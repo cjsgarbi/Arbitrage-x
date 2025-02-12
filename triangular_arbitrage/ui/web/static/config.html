@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Configurações - Dashboard de Arbitragem</title>
+    
+    <!-- Estilos -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+    <link rel="stylesheet" href="/static/css/config.css">
+
+    <!-- Scripts -->
+    <script type="module" src="/static/js/init.js"></script>
+    <script type="module" src="/static/js/themes.js"></script>
+    <script type="module" src="/static/js/config.js"></script>
+</head>
+<body class="bg-background text-text-primary min-h-screen">
+    <!-- Loading Indicator -->
+    <div id="loading" class="fixed inset-0 bg-surface bg-opacity-50 flex items-center justify-center z-50 hidden">
+        <div class="bg-surface p-4 rounded-lg shadow-lg">
+            <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+        </div>
+    </div>
+
+    <!-- Header -->
+    <header class="bg-surface shadow-sm">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+            <div class="flex justify-between items-center">
+                <div class="flex items-center space-x-4">
+                    <a href="/" class="text-text-secondary hover:text-text-primary transition-colors">
+                        ← Voltar ao Dashboard
+                    </a>
+                    <h1 class="text-2xl font-bold text-text-primary">Configurações do Bot</h1>
+                </div>
+                <div class="flex items-center space-x-4">
+                    <span id="save-status" class="text-sm"></span>
+                    <button id="theme-toggle" class="btn btn-secondary" aria-label="Alternar Tema">
+                        <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                            <path class="sun-icon" fill-rule="evenodd" d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z"></path>
+                            <path class="moon-icon" fill-rule="evenodd" d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z"></path>
+                        </svg>
+                    </button>
+                    <button id="btn-save" class="btn btn-primary">Salvar Alterações</button>
+                    <button id="btn-export" class="btn btn-secondary">Exportar</button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <!-- Navigation -->
+        <nav class="border-b border-divider mb-6">
+            <div class="flex space-x-8" role="tablist">
+                <button class="nav-tab active" data-tab="trading" role="tab">Trading</button>
+                <button class="nav-tab" data-tab="monitoring" role="tab">Monitoramento</button>
+                <button class="nav-tab" data-tab="rate_limits" role="tab">Rate Limits</button>
+                <button class="nav-tab" data-tab="security" role="tab">Segurança</button>
+            </div>
+        </nav>
+
+        <!-- Config Sections -->
+        <div id="config-sections" class="space-y-6">
+            <!-- Trading Section -->
+            <section id="trading-section" class="config-section">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <!-- Trading Parameters -->
+                    <div class="card p-6">
+                        <h3 class="text-lg font-medium mb-4">Parâmetros de Trading</h3>
+                        <div class="space-y-4">
+                            <!-- Trading fields -->
+                        </div>
+                    </div>
+
+                    <!-- Trading Limits -->
+                    <div class="card p-6">
+                        <h3 class="text-lg font-medium mb-4">Limites de Trading</h3>
+                        <div class="space-y-4">
+                            <!-- Limit fields -->
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Other sections remain unchanged -->
+        </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="bg-surface mt-8 py-4">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="text-center text-text-secondary text-sm">
+                Última atualização: <span id="last-update">-</span>
+            </div>
+        </div>
+    </footer>
+
+    <!-- Templates -->
+    <template id="form-field-template">
+        <div class="form-group">
+            <label class="block text-sm font-medium mb-1"></label>
+            <input class="form-input">
+            <p class="help-text mt-1 text-sm"></p>
+        </div>
+    </template>
+</body>
+</html>

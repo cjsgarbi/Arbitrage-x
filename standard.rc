@@ -1,509 +1,493 @@
 [MASTER]
 
-# A comma-separated list of package or module names from where C extensions may
-# be loaded. Extensions are loading into the active Python interpreter and may
-# run arbitrary code.
+# Uma lista separada por vírgulas de nomes de pacotes ou módulos de onde extensões C podem
+# ser carregadas. Extensões estão sendo carregadas no interpretador Python ativo e podem
+# executar código arbitrário.
 extension-pkg-whitelist=
 
-# Add files or directories to the blacklist. They should be base names, not
-# paths.
+# Adicione arquivos ou diretórios à lista negra. Eles devem ser nomes base, não
+# caminhos.
 ignore=CVS
 
-# Add files or directories matching the regex patterns to the blacklist. The
-# regex matches against base names, not paths.
+# Adicione arquivos ou diretórios que correspondam aos padrões regex à lista negra. O
+# regex corresponde a nomes base, não a caminhos.
 ignore-patterns=
 
-# Python code to execute, usually for sys.path manipulation such as
+# Código Python a ser executado, geralmente para manipulação de sys.path como
 # pygtk.require().
 #init-hook=
 
-# Use multiple processes to speed up Pylint. Specifying 0 will auto-detect the
-# number of processors available to use.
+# Use vários processos para acelerar o Pylint. Especificar 0 detectará automaticamente o
+# número de processadores disponíveis para uso.
 jobs=1
 
-# Control the amount of potential inferred values when inferring a single
-# object. This can help the performance when dealing with large functions or
-# complex, nested conditions.
+# Controle a quantidade de valores inferidos em potencial ao inferir um único
+# objeto. Isso pode ajudar no desempenho ao lidar com funções grandes ou
+# condições complexas e aninhadas.
 limit-inference-results=100
 
-# List of plugins (as comma separated values of python module names) to load,
-# usually to register additional checkers.
+# Lista de plugins (como valores separados por vírgulas de nomes de módulos python) para carregar,
+# geralmente para registrar verificadores adicionais.
 load-plugins=
 
-# Pickle collected data for later comparisons.
+# Dados coletados do Pickle para comparações posteriores.
 persistent=yes
 
-# Specify a configuration file.
+# Especifica um arquivo de configuração.
 #rcfile=
 
-# When enabled, pylint would attempt to guess common misconfiguration and emit
-# user-friendly hints instead of false-positive error messages.
+# Quando habilitado, o pylint tentaria adivinhar erros de configuração comuns e emitiria
+# dicas amigáveis ​​ao usuário em vez de mensagens de erro falso-positivo.
 suggestion-mode=yes
 
-# Allow loading of arbitrary C extensions. Extensions are imported into the
-# active Python interpreter and may run arbitrary code.
+# Permitir o carregamento de extensões C arbitrárias. As extensões são importadas para o
+# interpretador Python ativo e podem executar código arbitrário.
 unsafe-load-any-extension=no
 
+[CONTROLE DE MENSAGENS]
 
-[MESSAGES CONTROL]
-
-# Only show warnings with the listed confidence levels. Leave empty to show
-# all. Valid levels: HIGH, INFERENCE, INFERENCE_FAILURE, UNDEFINED.
+# Mostrar apenas avisos com os níveis de confiança listados. Deixe em branco para mostrar
+# todos. Níveis válidos: ALTO, INFERÊNCIA, FALHA_DE_INFERÊNCIA, INDEFINIDO.
 confidence=
 
-# Disable the message, report, category or checker with the given id(s). You
-# can either give multiple identifiers separated by comma (,) or put this
-# option multiple times (only on the command line, not in the configuration
-# file where it should appear only once). You can also use "--disable=all" to
-# disable everything first and then reenable specific checks. For example, if
-# you want to run only the similarities checker, you can use "--disable=all
-# --enable=similarities". If you want to run only the classes checker, but have
-# no Warning level messages displayed, use "--disable=all --enable=classes
+# Desabilitar a mensagem, relatório, categoria ou verificador com os IDs fornecidos. Você
+# pode fornecer vários identificadores separados por vírgula (,) ou colocar esta
+# opção várias vezes (apenas na linha de comando, não no arquivo de
+# configuração, onde deve aparecer apenas uma vez). Você também pode usar "--disable=all" para
+# desabilitar tudo primeiro e depois reabilitar verificações específicas. Por exemplo, se
+# você quiser executar apenas o verificador de similaridades, você pode usar "--disable=all
+# --enable=similarities". Se você quiser executar apenas o verificador de classes, mas não tiver
+# nenhuma mensagem de nível de Aviso exibida, use "--disable=all --enable=classes
 # --disable=W".
 disable=too-few-public-methods,
-        missing-module-docstring,
-        missing-class-docstring,
-        raise-missing-from,
-        consider-using-from-import,
-        use-maxsplit-arg,
-        unspecified-encoding,
-        consider-using-f-string,
-        missing-function-docstring,
-        wrong-import-order,
-        trailing-whitespace,
-        invalid-name,
-        too-many-locals,
-        line-too-long
+missing-module-docstring,
+missing-class-docstring,
+raise-missing-from,
+consider-using-from-import,
+use-maxsplit-arg,
+unspecified-encoding,
+consider-using-f-string,
+missing-function-docstring,
+wrong-import-order,
+trailing-whitespace,
+invalid-name,
+too-many-locals,
+line-too-long
 
-# Enable the message, report, category or checker with the given id(s). You can
-# either give multiple identifier separated by comma (,) or put this option
-# multiple time (only on the command line, not in the configuration file where
-# it should appear only once). See also the "--disable" option for examples.
+# Habilite a mensagem, o relatório, a categoria ou o verificador com os IDs fornecidos. Você pode
+# fornecer vários identificadores separados por vírgula (,) ou colocar esta opção
+# várias vezes (apenas na linha de comando, não no arquivo de configuração onde
+# deve aparecer apenas uma vez). Veja também a opção "--disable" para exemplos.
 enable=c-extension-no-member
 
 
-[REPORTS]
+[RELATÓRIOS]
 
-# Python expression which should return a score less than or equal to 10. You
-# have access to the variables 'error', 'warning', 'refactor', and 'convention'
-# which contain the number of messages in each category, as well as 'statement'
-# which is the total number of statements analyzed. This score is used by the
-# global evaluation report (RP0004).
+# Expressão Python que deve retornar uma pontuação menor ou igual a 10. Você
+# tem acesso às variáveis ​​'error', 'warning', 'refactor' e 'convention'
+# que contêm o número de mensagens em cada categoria, bem como 'statement'
+# que é o número total de declarações analisadas. Esta pontuação é usada pelo
+# relatório de avaliação global (RP0004).
 evaluation=10.0 - ((float(5 * error + warning + refactor + convention) / statement) * 10)
 
-# Template used to display messages. This is a python new-style format string
-# used to format the message information. See doc for all details.
+# Modelo usado para exibir mensagens. Esta é uma string de formato de novo estilo do Python
+# usada para formatar as informações da mensagem. Veja a documentação para todos os detalhes.
 #msg-template=
 
-# Set the output format. Available formats are text, parseable, colorized, json
-# and msvs (visual studio). You can also give a reporter class, e.g.
+# Defina o formato de saída. Os formatos disponíveis são text, parseable, colorized, json
+# e msvs (visual studio). Você também pode dar uma classe reporter, por exemplo
 # mypackage.mymodule.MyReporterClass.
 output-format=text
 
-# Tells whether to display a full report or only the messages.
+# Informa se deve exibir um relatório completo ou apenas as mensagens.
 reports=no
 
-# Activate the evaluation score.
+# Ativa a pontuação de avaliação.
 score=yes
 
+[REFATORAÇÃO]
 
-[REFACTORING]
+# Número máximo de blocos aninháveis ​​para o corpo da função/método
+máximo de blocos aninhados = 5
 
-# Maximum number of nested blocks for function / method body
-max-nested-blocks=5
+# Nome completo das funções que nunca serão retornadas. Ao verificar
+# inconsistent-return-statements é uma função que nunca retorna para chamada, então
+# ela será considerada como uma declaração de retorno explícita e nenhuma mensagem será
+#impressa.
+funções que nunca retornam = sys.exit
 
-# Complete name of functions that never returns. When checking for
-# inconsistent-return-statements if a never returning function is called then
-# it will be considered as an explicit return statement and no message will be
-# printed.
-never-returning-functions=sys.exit
+[SEMILARIDADES]
 
+# Ignore comentários ao calcular semelhanças.
+ignorar-comentários = sim
 
-[SIMILARITIES]
+# Ignore docstrings ao calcular semelhanças.
+ignore-docstrings = sim
 
-# Ignore comments when computing similarities.
-ignore-comments=yes
+# Ignore as importações ao calcular semelhanças.
+ignorar-importações = não
 
-# Ignore docstrings when computing similarities.
-ignore-docstrings=yes
-
-# Ignore imports when computing similarities.
-ignore-imports=no
-
-# Minimum lines number of a similarity.
-min-similarity-lines=4
+# Número mínimo de linhas de uma similaridade.
+min-linhas de similaridade = 4
 
 
-[LOGGING]
+[REGISTRO]
 
-# Format style used to check logging format string. `old` means using %
-# formatting, `new` is for `{}` formatting,and `fstr` is for f-strings.
+# Estilo de formato usado para verificar a string de formato de log. `old` significa usar %
+# formatação, `new` é para formatação `{}` e `fstr` é para f-strings.
 logging-format-style=old
 
-# Logging modules to check that the string format arguments are in logging
-# function parameter format.
+# Módulos de log para verificar se os argumentos de formato de string estão no log # formato de parâmetro de função.
 logging-modules=logging
 
 
 [STRING]
 
-# This flag controls whether the implicit-str-concat-in-sequence should
-# generate a warning on implicit string concatenation in sequences defined over
-# several lines.
+# Este sinalizador controla se o implicit-str-concat-in-sequence deve
+# gerar um aviso sobre concatenação implícita de strings em sequências definidas em
+# várias linhas.
 check-str-concat-over-line-jumps=no
-
 
 [SPELLING]
 
-# Limits count of emitted suggestions for spelling mistakes.
+# Limita a contagem de sugestões emitidas para erros de ortografia.
 max-spelling-suggestions=4
 
-# Spelling dictionary name. Available dictionaries: none. To make it work,
-# install the python-enchant package.
+# Nome do dicionário ortográfico. Dicionários disponíveis: nenhum. Para fazê-lo funcionar,
+# instale o pacote python-enchant.
 spelling-dict=
 
-# List of comma separated words that should not be checked.
+# Lista de palavras separadas por vírgulas que não devem ser verificadas.
 spelling-ignore-words=
 
-# A path to a file that contains the private dictionary; one word per line.
+# Um caminho para um arquivo que contém o dicionário privado; uma palavra por linha.
 spelling-private-dict-file=
 
-# Tells whether to store unknown words to the private dictionary (see the
-# --spelling-private-dict-file option) instead of raising a message.
+# Informa se deve armazenar palavras desconhecidas no dicionário privado (consulte a
+# opção --spelling-private-dict-file) em vez de gerar uma mensagem.
 spelling-store-unknown-words=no
-
 
 [FORMAT]
 
-# Expected format of line ending, e.g. empty (any line ending), LF or CRLF.
+# Formato esperado de final de linha, por exemplo, vazio (qualquer final de linha), LF ou CRLF.
 expected-line-ending-format=
 
-# Regexp for a line that is allowed to be longer than the limit.
+# Expressão regular para uma linha que pode ser maior que o limite.
 ignore-long-lines=^\s*(# )?<?https?://\S+>?$
 
-# Number of spaces of indent required inside a hanging or continued line.
+# Número de espaços de recuo necessários dentro de uma linha suspensa ou contínua.
 indent-after-paren=4
 
-# String used as indentation unit. This is usually "    " (4 spaces) or "\t" (1
-# tab).
-indent-string='    '
+# String usada como unidade de recuo. Geralmente é " " (4 espaços) ou "\t" (1
+# tabulação).
+indent-string=' '
 
-# Maximum number of characters on a single line.
+# Número máximo de caracteres em uma única linha.
 max-line-length=120
 
-# Maximum number of lines in a module.
+# Número máximo de linhas em um módulo.
 max-module-lines=1000
 
-# Allow the body of a class to be on the same line as the declaration if body
-# contains single statement.
+# Permite que o corpo de uma classe esteja na mesma linha que a declaração se o corpo
+# contiver uma única instrução.
 single-line-class-stmt=no
 
-# Allow the body of an if to be on the same line as the test if there is no
+# Permitir que o corpo de um if esteja na mesma linha que o teste se não houver
 # else.
 single-line-if-stmt=no
 
-
 [MISCELLANEOUS]
 
-# List of note tags to take in consideration, separated by a comma.
+# Lista de tags de nota a serem consideradas, separadas por uma vírgula.
 notes=FIXME,
-      XXX,
-      TODO
-
+XXX,
+TODO
 
 [BASIC]
 
-# Naming style matching correct argument names.
+# Estilo de nomenclatura correspondente aos nomes de argumentos corretos.
 argument-naming-style=snake_case
 
-# Regular expression matching correct argument names. Overrides argument-
+# Expressão regular correspondente aos nomes de argumentos corretos. Substitui argument-
 # naming-style.
 #argument-rgx=
 
-# Naming style matching correct attribute names.
+# Estilo de nomenclatura correspondente aos nomes de atributos corretos.
 attr-naming-style=snake_case
 
-# Regular expression matching correct attribute names. Overrides attr-naming-
+# Expressão regular correspondente aos nomes de atributos corretos. Substitui attr-naming-
 # style.
 #attr-rgx=
 
-# Bad variable names which should always be refused, separated by a comma.
+# Nomes de variáveis ​​incorretos que devem ser sempre recusados, separados por uma vírgula.
 bad-names=foo,
-          bar,
-          baz,
-          toto,
-          tutu,
-          tata
+bar,
+baz,
+toto,
+tutu,
+tata
 
-# Naming style matching correct class attribute names.
+# Estilo de nomenclatura correspondente aos nomes corretos de atributos de classe.
 class-attribute-naming-style=any
 
-# Regular expression matching correct class attribute names. Overrides class-
+# Expressão regular correspondente aos nomes corretos de atributos de classe. Substitui class-
 # attribute-naming-style.
 #class-attribute-rgx=
 
-# Naming style matching correct class names.
+# Estilo de nomenclatura correspondente aos nomes corretos de classe.
 class-naming-style=PascalCase
 
-# Regular expression matching correct class names. Overrides class-naming-
+# Expressão regular correspondente aos nomes corretos de classe. Substitui class-naming-
 # style.
 #class-rgx=
 
-# Naming style matching correct constant names.
+# Estilo de nomenclatura correspondente aos nomes corretos de constantes.
 const-naming-style=UPPER_CASE
 
-# Regular expression matching correct constant names. Overrides const-naming-
+# Expressão regular correspondente aos nomes corretos de constantes. Substitui const-naming-
 # style.
 #const-rgx=
 
-# Minimum line length for functions/classes that require docstrings, shorter
-# ones are exempt.
+# Comprimento mínimo de linha para funções/classes que exigem docstrings, as mais curtas
+# são isentas.
 docstring-min-length=-1
 
-# Naming style matching correct function names.
+# Estilo de nomenclatura que corresponde aos nomes corretos das funções.
 function-naming-style=snake_case
 
-# Regular expression matching correct function names. Overrides function-
+# Expressão regular que corresponde aos nomes corretos das funções. Substitui function-
 # naming-style.
 #function-rgx=
 
-# Good variable names which should always be accepted, separated by a comma.
+# Bons nomes de variáveis ​​que devem ser sempre aceitos, separados por uma vírgula.
 good-names=i,
-           j,
-           k,
-           ex,
-           Run,
-           _
+j,
+k,
+ex,
+Run,
+_
 
-# Include a hint for the correct naming format with invalid-name.
+# Incluir uma dica para o formato de nomenclatura correto com invalid-name.
 include-naming-hint=no
 
-# Naming style matching correct inline iteration names.
+# Estilo de nomenclatura correspondente aos nomes corretos de iteração em linha.
 inlinevar-naming-style=any
 
-# Regular expression matching correct inline iteration names. Overrides
+# Expressão regular correspondente aos nomes corretos de iteração em linha. Substitui
 # inlinevar-naming-style.
 #inlinevar-rgx=
 
-# Naming style matching correct method names.
+# Estilo de nomenclatura correspondente aos nomes corretos de método.
 method-naming-style=snake_case
 
-# Regular expression matching correct method names. Overrides method-naming-
+# Expressão regular correspondente aos nomes corretos de método. Substitui method-naming-
 # style.
 #method-rgx=
 
-# Naming style matching correct module names.
+# Estilo de nomenclatura correspondente aos nomes corretos de módulo.
 module-naming-style=snake_case
 
-# Regular expression matching correct module names. Overrides module-naming-
+# Expressão regular correspondente aos nomes corretos de módulo. Substitui module-naming-
 # style.
 #module-rgx=
 
-# Colon-delimited sets of names that determine each other's naming style when
-# the name regexes allow several styles.
+# Conjuntos de nomes delimitados por dois pontos que determinam o estilo de nomenclatura um do outro quando
+# as expressões regulares de nome permitem vários estilos.
 name-group=
 
-# Regular expression which should only match function or class names that do
-# not require a docstring.
+# Expressão regular que deve corresponder apenas a nomes de funções ou classes que
+# não exijam uma docstring.
 no-docstring-rgx=^_
 
-# List of decorators that produce properties, such as abc.abstractproperty. Add
-# to this list to register other decorators that produce valid properties.
-# These decorators are taken in consideration only for invalid-name.
+# Lista de decoradores que produzem propriedades, como abc.abstractproperty. Adicione
+# a esta lista para registrar outros decoradores que produzem propriedades válidas.
+# Esses decoradores são levados em consideração apenas para invalid-name.
 property-classes=abc.abstractproperty
 
-# Naming style matching correct variable names.
+# Estilo de nomenclatura que corresponde a nomes de variáveis ​​corretos.
 variable-naming-style=snake_case
 
-# Regular expression matching correct variable names. Overrides variable-
+# Expressão regular que corresponde a nomes de variáveis ​​corretos. Substitui variable-
 # naming-style.
 #variable-rgx=
 
-
 [VARIABLES]
 
-# List of additional names supposed to be defined in builtins. Remember that
-# you should avoid defining new builtins when possible.
+# Lista de nomes adicionais que devem ser definidos em builtins. Lembre-se de que
+# você deve evitar definir novos builtins quando possível.
 additional-builtins=
 
-# Tells whether unused global variables should be treated as a violation.
+# Informa se variáveis ​​globais não utilizadas devem ser tratadas como uma violação.
 allow-global-unused-variables=yes
 
-# List of strings which can identify a callback function by name. A callback
-# name must start or end with one of those strings.
+# Lista de strings que podem identificar uma função de retorno de chamada pelo nome. Um retorno de chamada
+# nome deve começar ou terminar com uma dessas strings.
 callbacks=cb_,
-          _cb
+_cb
 
-# A regular expression matching the name of dummy variables (i.e. expected to
-# not be used).
+# Uma expressão regular que corresponde ao nome de variáveis ​​fictícias (ou seja, não deve
+# ser usada).
 dummy-variables-rgx=_+$|(_[a-zA-Z0-9_]*[a-zA-Z0-9]+?$)|dummy|^ignored_|^unused_
 
-# Argument names that match this expression will be ignored. Default to name
-# with leading underscore.
+# Nomes de argumentos que correspondem a esta expressão serão ignorados. O padrão é name
+# com sublinhado inicial.
 ignored-argument-names=_.*|^ignored_|^unused_
 
-# Tells whether we should check for unused import in __init__ files.
+# Informa se devemos verificar se há importação não utilizada em arquivos __init__.
 init-import=no
 
-# List of qualified module names which can have objects that can redefine
+# Lista de nomes de módulos qualificados que podem ter objetos que podem redefinir
 # builtins.
 redefining-builtins-modules=six.moves,past.builtins,future.builtins,builtins,io
 
-
 [TYPECHECK]
 
-# List of decorators that produce context managers, such as
-# contextlib.contextmanager. Add to this list to register other decorators that
-# produce valid context managers.
+# Lista de decoradores que produzem gerenciadores de contexto, como
+# contextlib.contextmanager. Adicione a esta lista para registrar outros decoradores que
+# produzem gerenciadores de contexto válidos.
 contextmanager-decorators=contextlib.contextmanager
 
-# List of members which are set dynamically and missed by pylint inference
-# system, and so shouldn't trigger E1101 when accessed. Python regular
-# expressions are accepted.
+# Lista de membros que são definidos dinamicamente e perdidos pelo sistema de inferência
+# pylint e, portanto, não devem disparar E1101 quando acessados. Expressões regulares
+# do Python são aceitas.
 generated-members=
 
-# Tells whether missing members accessed in mixin class should be ignored. A
-# mixin class is detected if its name ends with "mixin" (case insensitive).
+# Informa se os membros ausentes acessados ​​na classe mixin devem ser ignorados. Uma
+# classe mixin é detectada se seu nome termina com "mixin" (sem distinção entre maiúsculas e minúsculas).
 ignore-mixin-members=yes
 
-# Tells whether to warn about missing members when the owner of the attribute
-# is inferred to be None.
+# Informa se deve avisar sobre membros ausentes quando o proprietário do atributo
+# é inferido como Nenhum.
 ignore-none=yes
 
-# This flag controls whether pylint should warn about no-member and similar
-# checks whenever an opaque object is returned when inferring. The inference
-# can return multiple potential results while evaluating a Python object, but
-# some branches might not be evaluated, which results in partial inference. In
-# that case, it might be useful to still emit no-member and other checks for
-# the rest of the inferred objects.
+# Este sinalizador controla se o pylint deve avisar sobre no-member e similares
+# verifica sempre que um objeto opaco é retornado ao inferir. A inferência
+# pode retornar vários resultados potenciais ao avaliar um objeto Python, mas
+# alguns ramos podem não ser avaliados, o que resulta em inferência parcial.
+# Nesse caso, pode ser útil ainda emitir no-member e outras verificações para
+# o restante dos objetos inferidos.
 ignore-on-opaque-inference=yes
 
-# List of class names for which member attributes should not be checked (useful
-# for classes with dynamically set attributes). This supports the use of
-# qualified names.
-ignored-classes=optparse.Values,thread._local,_thread._local
+# Lista de nomes de classes para os quais os atributos de membros não devem ser verificados (útil
+# para classes com atributos definidos dinamicamente). Isso suporta o uso de
+# nomes qualificados.
+ignore-classes=optparse.Values,thread._local,_thread._local
 
-# List of module names for which member attributes should not be checked
-# (useful for modules/projects where namespaces are manipulated during runtime
-# and thus existing member attributes cannot be deduced by static analysis). It
-# supports qualified module names, as well as Unix pattern matching.
+# Lista de nomes de módulos para os quais os atributos de membros não devem ser verificados
+# (útil para módulos/projetos onde os namespaces são manipulados durante o tempo de execução
+# e, portanto, os atributos de membros existentes não podem ser deduzidos por análise estática). Ele
+# suporta nomes de módulos qualificados, bem como correspondência de padrões Unix.
 ignored-modules=
 
-# Show a hint with possible names when a member name was not found. The aspect
-# of finding the hint is based on edit distance.
+# Mostra uma dica com nomes possíveis quando um nome de membro não foi encontrado. O aspecto
+# de encontrar a dica é baseado na distância de edição.
 missing-member-hint=yes
 
-# The minimum edit distance a name should have in order to be considered a
-# similar match for a missing member name.
+# A distância mínima de edição que um nome deve ter para ser considerado uma
+# correspondência semelhante para um nome de membro ausente.
 missing-member-hint-distance=1
 
-# The total number of similar names that should be taken in consideration when
-# showing a hint for a missing member.
+# O número total de nomes semelhantes que devem ser levados em consideração ao
+# mostrar uma dica para um membro ausente.
 missing-member-max-choices=1
 
-# List of decorators that change the signature of a decorated function.
+# Lista de decoradores que alteram a assinatura de uma função decorada.
 signature-mutators=
-
 
 [IMPORTS]
 
-# List of modules that can be imported at any level, not just the top level
-# one.
+# Lista de módulos que podem ser importados em qualquer nível, não apenas no nível
+# superior.
 allow-any-import-level=
 
-# Allow wildcard imports from modules that define __all__.
+# Permite importações curinga de módulos que definem __all__.
 allow-wildcard-with-all=no
 
-# Analyse import fallback blocks. This can be used to support both Python 2 and
-# 3 compatible code, which means that the block might have code that exists
-# only in one or another interpreter, leading to false positives when analysed.
+# Analisar blocos de fallback de importação. Isso pode ser usado para dar suporte a códigos compatíveis com Python 2 e
+# 3, o que significa que o bloco pode ter código que existe
+# somente em um ou outro interpretador, levando a falsos positivos quando analisado.
 analyse-fallback-blocks=no
 
-# Deprecated modules which should not be used, separated by a comma.
+# Módulos obsoletos que não devem ser usados, separados por uma vírgula.
 deprecated-modules=optparse,tkinter.tix
 
-# Create a graph of external dependencies in the given file (report RP0402 must
-# not be disabled).
+# Crie um gráfico de dependências externas no arquivo fornecido (o relatório RP0402 não deve
+# ser desabilitado).
 ext-import-graph=
 
-# Create a graph of every (i.e. internal and external) dependencies in the
-# given file (report RP0402 must not be disabled).
+# Crie um gráfico de todas as dependências (ou seja, internas e externas) no
+# arquivo fornecido (o relatório RP0402 não deve
+# ser desabilitado).
 import-graph=
 
-# Create a graph of internal dependencies in the given file (report RP0402 must
-# not be disabled).
+# Crie um gráfico de dependências internas no arquivo fornecido (o relatório RP0402 não deve
+# ser desabilitado).
 int-import-graph=
 
-# Force import order to recognize a module as part of the standard
-# compatibility libraries.
+# Force a ordem de importação para reconhecer um módulo como parte das bibliotecas de compatibilidade
+# padrão.
 known-standard-library=
 
-# Force import order to recognize a module as part of a third party library.
+# Forçar ordem de importação para reconhecer um módulo como parte de uma biblioteca de terceiros.
 known-third-party=enchant
 
-# Couples of modules and preferred modules, separated by a comma.
+# Casais de módulos e módulos preferenciais, separados por uma vírgula.
 preferred-modules=
-
 
 [CLASSES]
 
-# List of method names used to declare (i.e. assign) instance attributes.
+# Lista de nomes de métodos usados ​​para declarar (ou seja, atribuir) atributos de instância.
 defining-attr-methods=__init__,
-                      __new__,
-                      setUp,
-                      __post_init__
+__new__,
+setUp,
+__post_init__
 
-# List of member names, which should be excluded from the protected access
-# warning.
+# Lista de nomes de membros, que devem ser excluídos do acesso protegido
+# aviso.
 exclude-protected=_asdict,
-                  _fields,
-                  _replace,
-                  _source,
-                  _make
+_fields,
+_replace,
+_source,
+_make
 
-# List of valid names for the first argument in a class method.
+# Lista de nomes válidos para o primeiro argumento em um método de classe.
 valid-classmethod-first-arg=cls
 
-# List of valid names for the first argument in a metaclass class method.
+# Lista de nomes válidos para o primeiro argumento em um método de classe de metaclasse.
 valid-metaclass-classmethod-first-arg=cls
-
 
 [DESIGN]
 
-# Maximum number of arguments for function / method.
+# Número máximo de argumentos para função/método.
 max-args=5
 
-# Maximum number of attributes for a class (see R0902).
+# Número máximo de atributos para uma classe (consulte R0902).
 max-attributes=7
 
-# Maximum number of boolean expressions in an if statement (see R0916).
+# Número máximo de expressões booleanas em uma instrução if (consulte R0916).
 max-bool-expr=5
 
-# Maximum number of branch for function / method body.
+# Número máximo de ramificações para o corpo da função/método.
 max-branches=12
 
-# Maximum number of locals for function / method body.
+# Número máximo de locais para o corpo da função/método.
 max-locals=15
 
-# Maximum number of parents for a class (see R0901).
+# Número máximo de pais para uma classe (consulte R0901).
 max-parents=7
 
-# Maximum number of public methods for a class (see R0904).
+# Número máximo de métodos públicos para uma classe (consulte R0904).
 max-public-methods=20
 
-# Maximum number of return / yield for function / method body.
+# Número máximo de retornos/rendimentos para o corpo da função/método.
 max-returns=6
 
-# Maximum number of statements in function / method body.
+# Número máximo de instruções no corpo da função/método.
 max-statements=50
 
-# Minimum number of public methods for a class (see R0903).
+# Número mínimo de métodos públicos para uma classe (veja R0903).
 min-public-methods=2
 
+[EXCEÇÕES]
 
-[EXCEPTIONS]
-
-# Exceptions that will emit a warning when being caught. Defaults to
-# "BaseException, Exception".
-overgeneral-exceptions=builtins.BaseException,
-                       builtins.Exception
+# Exceções

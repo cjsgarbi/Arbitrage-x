@@ -1,10 +1,73 @@
-import logging
+import logging.handlers
 import sys
+import os
 from pathlib import Path
 from datetime import datetime
 from typing import Optional
 import json
 import codecs
+import locale
+from logging.handlers import RotatingFileHandler
+
+
+def setup_logging():
+    """Configura logging com suporte a caracteres especiais no Windows"""
+    # Remove handlers existentes
+    for handler in logging.root.handlers[:]:
+        logging.root.removeHandler(handler)
+        
+    # Configura formato do log com timestamp mais detalhado
+    formatter = logging.Formatter(
+        '%(asctime)s.%(msecs)03d - %(name)s - %(levelname)s - %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
+    
+    # Handler para console com encoding UTF-8 e detecção do encoding do sistema
+    system_encoding = locale.getpreferredencoding()
+    console_handler = logging.StreamHandler(
+        codecs.getwriter(system_encoding)(sys.stdout.buffer, 'replace')
+    )
+    console_handler.setFormatter(formatter)
+    console_handler.setLevel(logging.INFO)
+    
+    # Handler para arquivo com encoding UTF-8
+    log_dir = Path('logs')
+    log_dir.mkdir(exist_ok=True)
+    
+    # Arquivo principal de log com rotação
+    main_handler = RotatingFileHandler(
+        log_dir / 'bot.log',
+        maxBytes=10*1024*1024,  # 10MB
+        backupCount=5,
+        encoding='utf-8',
+        delay=True
+    )
+    main_handler.setFormatter(formatter)
+    main_handler.setLevel(logging.DEBUG)
+    
+    # Arquivo específico para erros
+    error_handler = RotatingFileHandler(
+        log_dir / 'error.log',
+        maxBytes=5*1024*1024,  # 5MB
+        backupCount=3,
+        encoding='utf-8',
+        delay=True
+    )
+    error_handler.setFormatter(formatter)
+    error_handler.setLevel(logging.ERROR)
+    
+    # Configura logger root
+    logging.root.setLevel(logging.DEBUG)
+    logging.root.addHandler(console_handler)
+    logging.root.addHandler(main_handler)
+    logging.root.addHandler(error_handler)
+    
+    # Configura logging para bibliotecas externas
+    logging.getLogger('asyncio').setLevel(logging.INFO)
+    logging.getLogger('aiohttp').setLevel(logging.INFO)
+    logging.getLogger('websockets').setLevel(logging.INFO)
+    
+    return logging.getLogger(__name__)
 
 
 class Logger:
@@ -17,28 +80,7 @@ class Logger:
         self.log_dir = Path(log_dir)
         self.log_dir.mkdir(parents=True, exist_ok=True)
 
-        # Configura logger raiz
-        self.logger = logging.getLogger()
-        self.logger.setLevel(logging.DEBUG)
-
-        # Formata logs
-        formatter = logging.Formatter(
-            '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-        )
-
-        # Handler para console
-        if sys.platform == 'win32':
-            console_handler = logging.StreamHandler(
-                codecs.getwriter('utf-8')(sys.stdout.buffer))
-        else:
-            console_handler = logging.StreamHandler(sys.stdout)
-
-        console_handler.setLevel(logging.INFO)
-        console_handler.setFormatter(formatter)
-        self.logger.addHandler(console_handler)
-
-        # Handler para arquivo
-        self.setup_file_handler()
+        self.logger = setup_logging()
 
         # Arquivo de trades
         self.trade_log = self.log_dir / "trades.json"
@@ -46,35 +88,24 @@ class Logger:
             self.trade_log.write_text("[]", encoding='utf-8')
 
     def info(self, message: str):
-        """Log nível INFO"""
-        self.logger.info(message)
+        """Log nível INFO sem emojis"""
+        self.logger.info(self._clean_message(message))
 
     def warning(self, message: str):
-        """Log nível WARNING"""
-        self.logger.warning(message)
+        """Log nível WARNING sem emojis"""
+        self.logger.warning(self._clean_message(message))
 
     def error(self, message: str):
-        """Log nível ERROR"""
-        self.logger.error(message)
+        """Log nível ERROR sem emojis"""
+        self.logger.error(self._clean_message(message))
 
     def debug(self, message: str):
-        """Log nível DEBUG"""
-        self.logger.debug(message)
+        """Log nível DEBUG sem emojis"""
+        self.logger.debug(self._clean_message(message))
 
-    def setup_file_handler(self) -> None:
-        """Configura handler para salvar logs em arquivo"""
-        now = datetime.now()
-        log_file = self.log_dir / f"bot_{now:%Y%m%d_%H%M%S}.log"
-
-        file_handler = logging.FileHandler(log_file, encoding='utf-8')
-        file_handler.setLevel(logging.DEBUG)
-
-        formatter = logging.Formatter(
-            '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-        )
-        file_handler.setFormatter(formatter)
-
-        self.logger.addHandler(file_handler)
+    def _clean_message(self, message: str) -> str:
+        """Remove emojis e caracteres especiais para compatibilidade"""
+        return message.encode('ascii', 'ignore').decode('ascii')
 
     def log_trade(self, trade_data: dict) -> None:
         """Registra informações de um trade
@@ -113,6 +144,7 @@ class Logger:
             if limit:
                 trades = trades[-limit:]
             return trades
+
         except Exception as e:
             self.logger.error(f"Erro ao ler trades: {e}")
             return []
@@ -122,6 +154,7 @@ class Logger:
         try:
             self.trade_log.write_text("[]", encoding='utf-8')
             self.logger.info("Histórico de trades limpo")
+
         except Exception as e:
             self.logger.error(f"Erro ao limpar trades: {e}")
 
@@ -136,31 +169,52 @@ class Logger:
             error_data = {
                 'timestamp': datetime.now().isoformat(),
                 'error': str(error),
-                'type': error.__class__.__name__
+                'type': error.__class__.__name__,
+                'traceback': self._get_traceback(error),
+                'context': context or {}
             }
-
-            if context:
-                error_data['context'] = context
 
             error_file = self.log_dir / "errors.json"
 
             # Carrega erros existentes
             if error_file.exists():
-                errors = json.loads(error_file.read_text())
+                try:
+                    errors = json.loads(error_file.read_text(encoding='utf-8'))
+                except json.JSONDecodeError:
+                    errors = []
             else:
                 errors = []
 
             # Adiciona novo erro
             errors.append(error_data)
 
-            # Salva arquivo atualizado
-            error_file.write_text(json.dumps(
-                errors, indent=2), encoding='utf-8')
+            # Mantém apenas os últimos 1000 erros
+            if len(errors) > 1000:
+                errors = errors[-1000:]
 
-            self.logger.error(f"Erro registrado: {error}", exc_info=True)
+            # Salva arquivo atualizado com formatação
+            error_file.write_text(
+                json.dumps(errors, indent=2, ensure_ascii=False),
+                encoding='utf-8'
+            )
+
+            # Logs detalhados do erro
+            self.logger.error(
+                f"Erro: {error}\nTipo: {error.__class__.__name__}\nContexto: {context}",
+                exc_info=True
+            )
 
         except Exception as e:
-            self.logger.error(f"Erro ao registrar erro: {e}")
+            self.logger.error(f"Erro ao registrar erro: {e}", exc_info=True)
+
+    def _get_traceback(self, error: Exception) -> str:
+        """Retorna o traceback formatado de uma exceção"""
+        import traceback
+        return ''.join(traceback.format_exception(
+            type(error),
+            error,
+            error.__traceback__
+        ))
 
     def get_errors(self, limit: Optional[int] = None) -> list:
         """Retorna histórico de erros

@@ -1,0 +1,258 @@
+/* Theme Variables */
+:root {
+    --background: #f3f4f6;
+    --surface: #ffffff;
+    --primary: #2563eb;
+    --secondary: #4b5563;
+    --accent: #3b82f6;
+    --text-primary: #111827;
+    --text-secondary: #4b5563;
+    --text-accent: #2563eb;
+    --border: #e5e7eb;
+    --divider: #e5e7eb;
+    --error: #dc2626;
+    --success: #059669;
+    --warning: #d97706;
+}
+
+/* Dark Theme */
+:root[class~="dark"] {
+    --background: #111827;
+    --surface: #1f2937;
+    --primary: #3b82f6;
+    --secondary: #9ca3af;
+    --accent: #60a5fa;
+    --text-primary: #f9fafb;
+    --text-secondary: #d1d5db;
+    --text-accent: #60a5fa;
+    --border: #374151;
+    --divider: #374151;
+    --error: #ef4444;
+    --success: #10b981;
+    --warning: #f59e0b;
+}
+
+/* Base */
+body {
+    font-family: 'Inter', sans-serif;
+    background-color: var(--background);
+    color: var(--text-primary);
+    transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* Cards */
+.card {
+    background-color: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 0.5rem;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    transition: background-color 0.3s ease, border-color 0.3s ease;
+}
+
+/* Buttons */
+.btn {
+    padding: 0.5rem 1rem;
+    border-radius: 0.375rem;
+    font-weight: 500;
+    transition: all 0.2s ease;
+}
+
+.btn:focus {
+    outline: none;
+    ring: 2px;
+    ring-offset: 2px;
+}
+
+.btn-primary {
+    background-color: var(--primary);
+    color: white;
+}
+
+.btn-primary:hover {
+    background-color: var(--accent);
+}
+
+.btn-secondary {
+    background-color: var(--secondary);
+    color: white;
+}
+
+.btn-secondary:hover {
+    filter: brightness(110%);
+}
+
+/* Navigation Tabs */
+.nav-tab {
+    padding: 1rem 0;
+    margin: 0 1rem;
+    font-weight: 500;
+    color: var(--text-secondary);
+    border-bottom: 2px solid transparent;
+    transition: all 0.2s ease;
+}
+
+.nav-tab:hover {
+    color: var(--text-primary);
+}
+
+.nav-tab.active {
+    color: var(--primary);
+    border-bottom-color: var(--primary);
+}
+
+/* Form Elements */
+.form-group {
+    margin-bottom: 1rem;
+}
+
+.form-input {
+    width: 100%;
+    padding: 0.5rem;
+    border: 1px solid var(--border);
+    border-radius: 0.375rem;
+    background-color: var(--surface);
+    color: var(--text-primary);
+    transition: all 0.2s ease;
+}
+
+.form-input:focus {
+    border-color: var(--primary);
+    ring: 1px;
+    ring-color: var(--primary);
+}
+
+.form-checkbox {
+    border-color: var(--border);
+    border-radius: 0.25rem;
+}
+
+.form-checkbox:checked {
+    background-color: var(--primary);
+}
+
+/* Labels */
+label {
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+    font-weight: 500;
+}
+
+.help-text {
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+    margin-top: 0.25rem;
+}
+
+/* Messages */
+.status-success {
+    color: var(--success);
+}
+
+.status-error {
+    color: var(--error);
+}
+
+/* Animations */
+.fade {
+    transition: opacity 0.2s ease;
+}
+
+.fade-enter {
+    opacity: 0;
+}
+
+.fade-enter-active {
+    opacity: 1;
+}
+
+.fade-exit {
+    opacity: 1;
+}
+
+.fade-exit-active {
+    opacity: 0;
+}
+
+/* Theme Toggle Button */
+#theme-toggle {
+    padding: 0.5rem;
+    border-radius: 0.5rem;
+    background-color: var(--surface);
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+    transition: all 0.2s ease;
+}
+
+#theme-toggle:hover {
+    background-color: var(--background);
+}
+
+/* Loading States */
+.loading {
+    opacity: 0.5;
+    pointer-events: none;
+}
+
+/* Tooltips */
+[data-tooltip] {
+    position: relative;
+}
+
+[data-tooltip]:before {
+    content: attr(data-tooltip);
+    position: absolute;
+    bottom: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 0.5rem;
+    background-color: var(--surface);
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+    border-radius: 0.25rem;
+    font-size: 0.75rem;
+    white-space: nowrap;
+    opacity: 0;
+    visibility: hidden;
+    transition: all 0.2s ease;
+}
+
+[data-tooltip]:hover:before {
+    opacity: 1;
+    visibility: visible;
+}
+
+/* Scrollbars */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: var(--background);
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--secondary);
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: var(--primary);
+}
+
+/* Print Styles */
+@media print {
+    body {
+        background: white;
+        color: black;
+    }
+
+    .card {
+        border: none;
+        box-shadow: none;
+    }
+
+    .no-print {
+        display: none;
+    }
+}

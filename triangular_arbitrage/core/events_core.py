@@ -1,4 +1,4 @@
-from typing import Dict, List, Callable, Any
+from typing import Dict, List, Callable, Any, Optional
 import asyncio
 import logging
 from datetime import datetime
@@ -76,7 +76,7 @@ class EventsCore:
 
         logger.debug(f"Evento {event_type} emitido com sucesso")
 
-    def get_history(self, event_type: str = None, limit: int = None) -> List[Dict]:
+    def get_history(self, event_type: Optional[str] = None, limit: Optional[int] = None) -> List[Dict]:
         """Retorna histórico de eventos
 
         Args:

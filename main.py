@@ -1,148 +1,119 @@
 import asyncio
-import argparse
-import logging
-import os
-import signal
 import sys
-from pathlib import Path
-from dotenv import load_dotenv
-
-from triangular_arbitrage.core.bot_core import BotCore
 from triangular_arbitrage.utils.logger import Logger
-from triangular_arbitrage.utils.db_helpers import DBHelpers
-from triangular_arbitrage.ui.display import Display
+from triangular_arbitrage.core.bot_core import BotCore
+from triangular_arbitrage.ui.web.app import WebDashboard
+import uvicorn
+import logging
+from triangular_arbitrage.config import DB_CONFIG, DISPLAY_CONFIG, TRADING_CONFIG
 
-# Carrega variáveis de ambiente
-load_dotenv()
+logger = logging.getLogger(__name__)
 
-
-def setup_logging():
-    """Configura sistema de logs"""
-    logger = Logger()
-    return logger
-
-
-def parse_args():
-    """Processa argumentos da linha de comando"""
-    parser = argparse.ArgumentParser(
-        description='Bot de Arbitragem Triangular')
-    parser.add_argument('--simulation', action='store_true',
-                        help='Executa em modo simulação')
-    parser.add_argument('--debug', action='store_true',
-                        help='Ativa logs de debug')
-    return parser.parse_args()
-
-
-async def shutdown(bot, signal=None):
-    """Encerra o bot graciosamente"""
-    if signal:
-        logging.info(f"Recebido sinal de encerramento {signal}...")
-
-    tasks = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
-    [task.cancel() for task in tasks]
-
-    logging.info(f"Cancelando {len(tasks)} tarefas pendentes")
-    await asyncio.gather(*tasks, return_exceptions=True)
-
-    await bot.stop()
-    asyncio.get_event_loop().stop()
-
-
-def handle_exception(loop, context):
-    msg = context.get("exception", context["message"])
-    logging.error(f"Erro no loop de eventos: {msg}")
-
-
-async def main():
-    """Função principal do bot"""
-    # Processa argumentos
-    args = parse_args()
-
-    # Configura logs
-    logger = setup_logging()
-    if args.debug:
-        logger.logger.setLevel(logging.DEBUG)
-
+async def init_components():
+    """Inicializa os componentes do sistema de forma segura"""
+    bot = None
+    dashboard = None
+    
     try:
-        # Banner inicial
-        print("\n" + "="*50)
-        print("🤖 Bot de Arbitragem Triangular")
-        print("="*50 + "\n")
+        # Inicializa bot core com retry
+        for attempt in range(3):  # 3 tentativas
+            try:
+                bot = BotCore(db=DB_CONFIG, display=DISPLAY_CONFIG, config=TRADING_CONFIG)
+                await bot.initialize()
+                break
+            except Exception as e:
+                if attempt == 2:  # última tentativa
+                    raise
+                logger.error(f"Erro na tentativa {attempt + 1} de inicializar bot: {str(e)}")
+                await asyncio.sleep(1)  # espera 1 segundo antes de tentar novamente
 
-        # Prepara configuração
-        config = {
-            'BINANCE_API_KEY': os.getenv('BINANCE_API_KEY', '').strip().replace('"', ''),
-            'BINANCE_API_SECRET': os.getenv('BINANCE_API_SECRET', '').strip().replace('"', ''),
-            'SIMULATION_MODE': args.simulation,
-            'SAVE_DATA': os.getenv('SAVE_DATA', 'false').lower() == 'true',
-            'DEBUG': args.debug,
-            'TEST_MODE': True  # Força modo de teste
-        }
+        # Inicializa web dashboard apenas se bot iniciou com sucesso
+        if bot and bot.is_connected:
+            dashboard = WebDashboard(bot)
+            await dashboard.initialize()
+            logger.info("✅ Componentes inicializados com sucesso")
+        else:
+            raise Exception("Bot não conectado após tentativas")
 
-        if not config['BINANCE_API_KEY'] or not config['BINANCE_API_SECRET']:
-            raise ValueError(
-                "❌ API Key e Secret da Binance Testnet não encontrados no arquivo .env")
-
-        # Configura loop de eventos
-        loop = asyncio.get_event_loop()
-        loop.set_exception_handler(handle_exception)
-
-        # Inicializa componentes
-        logger.logger.info("🔄 Inicializando componentes do bot...")
-
-        # Inicializa display
-        display = Display()
-        logger.logger.info("✅ Display inicializado")
-
-        # Inicializa banco de dados
-        db = DBHelpers()
-        await db.setup()
-        logger.logger.info("✅ Banco de dados inicializado")
-
-        # Inicializa bot
-        bot = BotCore(config=config, display=display)
-        logger.logger.info("✅ Bot core inicializado")
-
-        # Configura sinais para encerramento gracioso
-        if os.name == 'nt':  # Windows
-            signal.signal(signal.SIGINT, lambda s,
-                          f: asyncio.create_task(shutdown(bot)))
-            signal.signal(signal.SIGTERM, lambda s,
-                          f: asyncio.create_task(shutdown(bot)))
-        else:  # Unix/Linux
-            loop.add_signal_handler(
-                signal.SIGINT, lambda: asyncio.create_task(shutdown(bot)))
-            loop.add_signal_handler(
-                signal.SIGTERM, lambda: asyncio.create_task(shutdown(bot)))
-
-        # Aviso modo simulação
-        if config['SIMULATION_MODE']:
-            logger.logger.warning(
-                "⚠️  MODO SIMULAÇÃO ATIVO - Nenhuma ordem será enviada")
-            print("\n⚠️  MODO SIMULAÇÃO - Apenas monitorando oportunidades\n")
-            print("📊 Iniciando monitoramento de mercado...")
-            print("⌛ Aguarde enquanto coletamos dados iniciais...\n")
-
-        # Inicia bot
-        try:
-            await bot.start()
-        except Exception as e:
-            logger.logger.error(f"❌ Erro fatal: {str(e)}")
-            print(f"\n❌ Erro: {str(e)}")
-            print("🔄 Tentando reiniciar o bot em 5 segundos...")
-            await asyncio.sleep(5)
-            await shutdown(bot)
-
+        return bot, dashboard
+        
     except Exception as e:
-        logger.logger.error(f"❌ Erro fatal: {str(e)}")
-        if config.get('DEBUG', False):
-            logger.logger.error(f"🔍 Detalhes: {str(e.__class__.__name__)}")
+        import traceback
+        logger.error(f"❌ Erro fatal na inicialização: {str(e)}")
+        logger.error(f"Detalhes: {traceback.format_exc()}")
+        
+        # Tenta limpar recursos se algo foi criado
+        if bot:
+            await bot.cleanup()
+        if dashboard:
+            await dashboard.cleanup()
+            
         raise
 
-if __name__ == "__main__":
+async def main():
+    bot = None
+    dashboard = None
     try:
-        asyncio.run(main())
+        # Inicializa logger
+        Logger()
+        logger.info("Bot de Arbitragem Triangular")
+        logger.info("Iniciando sistema...")
+
+        # Inicializa componentes com retry
+        bot, dashboard = await init_components()
+
+        if not bot or not dashboard:
+            raise Exception("Falha na inicialização dos componentes")
+
+        # Configura servidor web com timeouts adequados
+        config = uvicorn.Config(
+            app=dashboard.app,
+            host="127.0.0.1",
+            port=8000,
+            log_level="info",  # Aumentado para info para ver mais detalhes
+            reload=False,
+            workers=1,
+            timeout_keep_alive=30,
+            loop="auto"
+        )
+        server = uvicorn.Server(config)
+
+        # Inicia bot e servidor em paralelo com timeout
+        try:
+            await asyncio.wait_for(
+                asyncio.gather(
+                    server.serve(),
+                    bot.start(),
+                    return_exceptions=True
+                ),
+                timeout=None  # Sem timeout pois deve rodar indefinidamente
+            )
+        except asyncio.TimeoutError:
+            logger.error("Timeout ao executar os serviços")
+            raise
+
     except KeyboardInterrupt:
-        print("\n🛑 Bot encerrado pelo usuário")
+        logger.info("Encerrando sistema...")
     except Exception as e:
-        print(f"\n❌ Erro fatal: {str(e)}")
+        import traceback
+        logger.error(f"❌ Erro fatal: {str(e)}")
+        logger.error(f"Detalhes: {traceback.format_exc()}")
+        sys.exit(1)
+    finally:
+        # Garante que recursos são liberados
+        try:
+            if bot:
+                await bot.stop()
+            if dashboard:
+                await dashboard.cleanup()
+            logger.info("✅ Sistema encerrado com sucesso")
+        except Exception as cleanup_error:
+            logger.error(f"Erro ao limpar recursos: {str(cleanup_error)}")
+
+if __name__ == "__main__":
+    # Configura evento loop do Windows
+    if sys.platform == "win32":
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+    
+    # Executa loop principal
+    asyncio.run(main())

@@ -1,0 +1,574 @@
+/* Base imports */
+@import 'https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css';
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap');
+
+/* Variáveis do tema */
+:root {
+    /* Cores base */
+    --bg-primary: #ffffff;
+    --bg-secondary: #f8fafc;
+    --text-primary: #1a202c;
+    --text-secondary: #4a5568;
+    --border-color: rgba(0, 0, 0, 0.1);
+    
+    /* Cores de destaque */
+    --highlight-green: #10b981;
+    --highlight-blue: #3b82f6;
+    --highlight-yellow: #f59e0b;
+    --highlight-red: #ef4444;
+    
+    /* Sombras */
+    --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+    --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+    --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+}
+
+/* Tema escuro */
+[data-theme='dark'] {
+    --bg-primary: #111827;
+    --bg-secondary: #1f2937;
+    --text-primary: #f9fafb;
+    --text-secondary: #d1d5db;
+    --border-color: rgba(255, 255, 255, 0.1);
+    
+    /* Cores de destaque no tema escuro */
+    --highlight-green: #34d399;
+    --highlight-blue: #60a5fa;
+    --highlight-yellow: #fbbf24;
+    --highlight-red: #f87171;
+}
+
+/* Estilos base */
+body {
+    background-color: var(--bg-primary);
+    color: var(--text-primary);
+}
+
+/* Estilos da tabela de oportunidades */
+.opportunities-table {
+    background: var(--bg-secondary);
+    border-radius: 0.5rem;
+    overflow: hidden;
+    width: 100%;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); /* Adicionando sombra */
+    border: 1px solid rgba(0, 0, 0, 0.1); /* Adicionando borda */
+    border-collapse: collapse; /* Melhorando a estrutura da tabela */
+}
+
+/* Estilização das células da tabela */
+.opportunities-table th,
+.opportunities-table td {
+    padding: 1rem;
+    text-align: left;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.1); /* Adicionando borda inferior */
+    transition: background-color 0.3s; /* Efeito de transição */
+}
+
+.opportunities-table tr:hover {
+    background-color: rgba(0, 0, 0, 0.05); /* Efeito ao passar o mouse */
+}
+
+/* Estilização das células da tabela */
+.opportunities-table th,
+.opportunities-table td {
+    padding: 1rem;
+    text-align: left;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.1); /* Adicionando borda inferior */
+}
+
+.opportunities-table th {
+    background-color: var(--bg-secondary);
+    font-weight: 600;
+    text-transform: uppercase;
+    font-size: 0.75rem;
+    color: var(--text-primary);
+    opacity: 0.7;
+}
+
+.opportunities-table tr:hover {
+    background-color: rgba(0, 0, 0, 0.02);
+}
+
+/* Estilização dos cards de gráficos */
+#opportunities-chart,
+#profit-distribution {
+    height: 300px;
+    margin-top: 1rem;
+    background-color: var(--bg-primary);
+    border-radius: 0.5rem;
+    padding: 1rem;
+}
+
+/* Estilização dos valores de lucro */
+.profit-positive {
+    color: #10b981;
+    font-weight: 600;
+    font-size: 1rem; /* Aumentando o tamanho da fonte */
+    text-align: center; /* Centralizando o texto */
+    animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+.profit-neutral {
+    color: #6b7280;
+}
+
+.profit-negative {
+    color: #ef4444;
+    font-weight: 600;
+}
+
+/* Status badges */
+.status-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.25rem 0.75rem;
+    border-radius: 9999px;
+    font-size: 0.75rem;
+    font-weight: 500;
+    @apply px-2 inline-flex text-xs leading-5 font-semibold rounded-full;
+}
+
+.status-badge.monitoring {
+    background-color: #fef3c7;
+    color: #92400e;
+}
+
+.status-badge.active {
+    background-color: #d1fae5;
+    color: #065f46;
+    @apply bg-green-100 text-green-800 dark:bg-green-700 dark:text-green-100;
+}
+
+.status-badge.excellent {
+    background-color: #dcfce7;
+    color: #166534;
+    animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+.status-badge.inactive {
+    @apply bg-gray-100 text-gray-800 dark:bg-gray-600 dark:text-gray-100;
+}
+
+@keyframes pulse {
+    0%, 100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.7;
+    }
+}
+
+/* Tooltips para gráficos */
+.plotly-tooltip {
+    background-color: var(--bg-primary) !important;
+    border-color: var(--bg-secondary) !important;
+    color: var(--text-primary) !important;
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+    border-radius: 0.5rem;
+    padding: 0.5rem;
+    font-size: 0.875rem;
+}
+
+/* Indicadores de status */
+.status-indicator {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    margin-right: 0.75rem;
+    transition: background-color 0.3s ease;
+}
+
+.status-active {
+    background-color: #10b981;
+    box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.2);
+}
+
+.status-inactive {
+    background-color: #ef4444;
+    box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.2);
+}
+
+/* Animações */
+.fade-enter {
+    opacity: 0;
+    transform: translateY(-10px);
+}
+
+.fade-enter-active {
+    opacity: 1;
+    transform: translateY(0);
+    transition: opacity 300ms, transform 300ms;
+}
+
+/* Hover e transições suaves */
+.transition-all {
+    transition-property: all;
+    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+    transition-duration: 200ms;
+}
+
+/* Estados ativos e hover em cards */
+.card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+}
+
+/* Notificações e alertas */
+.notification {
+    position: fixed;
+    bottom: 1rem;
+    right: 1rem;
+    padding: 1rem;
+    border-radius: 0.5rem;
+    background-color: var(--bg-primary);
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+    z-index: 50;
+    transition: all 0.3s ease;
+}
+
+.notification.success {
+    border-left: 4px solid #10b981;
+}
+
+.notification.error {
+    border-left: 4px solid #ef4444;
+}
+
+/* Tema escuro para badges */
+.dark .status-badge.monitoring {
+    background-color: #78350f;
+    color: #fef3c7;
+}
+
+.dark .status-badge.active {
+    background-color: #065f46;
+    color: #d1fae5;
+}
+
+.dark .status-badge.excellent {
+    background-color: #166534;
+    color: #dcfce7;
+}
+
+/* Cards no tema escuro */
+.dark .card {
+    background-color: var(--bg-secondary);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Responsividade para mobile */
+@media (max-width: 640px) {
+    .container {
+        padding-left: 1rem;
+        padding-right: 1rem;
+    }
+    
+    .notification {
+        left: 1rem;
+        right: 1rem;
+    }
+
+    /* Ajustes de tabela para mobile */
+    .opportunities-table {
+        display: block;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .opportunities-table td,
+    .opportunities-table th {
+        white-space: nowrap;
+        padding: 0.75rem 1rem;
+    }
+
+    /* Status badges em mobile */
+    .status-badge {
+        padding: 0.125rem 0.5rem;
+        font-size: 0.7rem;
+    }
+
+    /* Ajustes de espaçamento */
+    .grid-container {
+        gap: 1rem;
+    }
+
+    .card {
+        padding: 1rem;
+    }
+
+    /* Gráficos em mobile */
+    #opportunities-chart,
+    #profit-distribution {
+        height: 250px;
+    }
+}
+
+/* Top Pairs Table Styles */
+.top-pairs-table {
+    @apply w-full;
+}
+
+.top-pairs-table th {
+    @apply px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider;
+}
+
+.top-pairs-row {
+    @apply hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors;
+}
+
+.top-pairs-cell {
+    @apply px-6 py-4 whitespace-nowrap text-sm;
+}
+
+.profit-positive {
+    @apply text-green-600 dark:text-green-400;
+    animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+.profit-negative {
+    @apply text-red-600 dark:text-red-400;
+}
+
+/* Update indicators */
+.update-indicator {
+    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
+}
+
+.update-indicator.live {
+    @apply bg-blue-100 text-blue-800 dark:bg-blue-700 dark:text-blue-100;
+}
+
+.auto-refresh-button {
+    @apply inline-flex items-center px-3 py-1 border border-transparent text-sm leading-4 font-medium rounded-md;
+    @apply text-indigo-700 bg-indigo-100 hover:bg-indigo-200;
+    @apply dark:text-indigo-100 dark:bg-indigo-700 dark:hover:bg-indigo-600;
+    @apply focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500;
+    transition: all 0.2s ease;
+}
+
+/* Estilos para modal de detalhes dos pares */
+.pair-details-modal {
+    @apply fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50;
+    backdrop-filter: blur(4px);
+}
+
+/* Animações para o modal */
+@keyframes modalSlideIn {
+    from {
+        transform: translateY(-10%);
+        opacity: 0;
+    }
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}
+
+@keyframes modalFadeIn {
+    from {
+        opacity: 0;
+    }
+    to {
+        opacity: 1;
+    }
+}
+
+/* Estilos para indicadores de mudança */
+.change-indicator {
+    @apply inline-flex items-center;
+    transition: transform 0.2s ease;
+}
+
+.change-indicator-up {
+    @apply text-green-500;
+    transform: translateY(-1px);
+}
+
+.change-indicator-down {
+    @apply text-red-500;
+    transform: translateY(1px);
+}
+
+/* Estilização da tabela de pares */
+.pair-row {
+    @apply hover:bg-gray-50 dark:hover:bg-gray-700 transition-all duration-200;
+}
+
+.pair-row:hover .pair-actions {
+    @apply opacity-100;
+}
+
+.pair-actions {
+    @apply opacity-0 transition-opacity duration-200;
+}
+
+.pair-status-active {
+    @apply bg-green-100 text-green-800 dark:bg-green-700 dark:text-green-100;
+    animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+.pair-status-inactive {
+    @apply bg-gray-100 text-gray-800 dark:bg-gray-600 dark:text-gray-100;
+}
+
+/* Animação de pulso para status ativo */
+@keyframes pulse {
+    0%, 100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.7;
+    }
+}
+
+/* Monitor Cards */
+.monitor-card {
+    @apply z-50 cursor-move select-none;
+    transition: transform 0.1s ease, box-shadow 0.2s ease;
+}
+
+.monitor-card:hover {
+    @apply shadow-xl;
+}
+
+.monitor-card.dragging {
+    @apply shadow-2xl;
+    transform: scale(1.02);
+}
+
+/* Monitor Data */
+.monitor-value {
+    @apply transition-all duration-300;
+}
+
+.monitor-value.changed {
+    animation: highlight 1s ease-out;
+}
+
+@keyframes highlight {
+    0% {
+        background-color: rgba(59, 130, 246, 0.1);
+    }
+    100% {
+        background-color: transparent;
+    }
+}
+
+/* Monitor Routes */
+.monitor-routes {
+    max-height: 100px;
+    overflow-y: auto;
+    scrollbar-width: thin;
+}
+
+.monitor-routes::-webkit-scrollbar {
+    width: 4px;
+}
+
+.monitor-routes::-webkit-scrollbar-track {
+    @apply bg-gray-100 dark:bg-gray-700;
+}
+
+.monitor-routes::-webkit-scrollbar-thumb {
+    @apply bg-gray-300 dark:bg-gray-600;
+    border-radius: 2px;
+}
+
+/* Monitor Timestamp */
+.monitor-timestamp {
+    @apply text-xs text-gray-400;
+    font-variant-numeric: tabular-nums;
+}
+
+/* Estilos específicos para tabela de arbitragem triangular */
+.arbitrage-table {
+    @apply w-full;
+    font-variant-numeric: tabular-nums;
+}
+
+/* Animação para valores em atualização */
+@keyframes value-update {
+    0% {
+        background-color: rgba(16, 185, 129, 0.1);
+    }
+    100% {
+        background-color: transparent;
+    }
+}
+
+.value-changed {
+    animation: value-update 1s ease-out;
+}
+
+/* Estilos para lucros altos */
+.profit-high {
+    @apply text-green-600 dark:text-green-400 font-bold;
+    animation: pulse 2s infinite;
+}
+
+/* Indicadores de tendência */
+.trend-up::before {
+    content: "↑";
+    @apply text-green-500 mr-1;
+}
+
+.trend-down::before {
+    content: "↓";
+    @apply text-red-500 mr-1;
+}
+
+/* Volume em BTC com conversão USD */
+.volume-btc {
+    @apply flex flex-col;
+}
+
+.volume-usd {
+    @apply text-xs text-gray-400 dark:text-gray-500;
+}
+
+/* Status badges responsivos */
+.status-badge-active {
+    @apply px-2 inline-flex text-xs leading-5 font-semibold rounded-full;
+    @apply bg-green-100 text-green-800 dark:bg-green-700 dark:text-green-100;
+    animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Rotas de arbitragem */
+.arbitrage-route {
+    @apply flex items-center space-x-1 text-sm;
+}
+
+.arbitrage-route span {
+    @apply font-medium;
+}
+
+.arbitrage-route svg {
+    @apply w-4 h-4 text-gray-400;
+}
+
+/* Tooltip para informações adicionais */
+.tooltip {
+    @apply relative inline-block;
+}
+
+.tooltip:hover .tooltip-content {
+    @apply visible opacity-100;
+}
+
+.tooltip-content {
+    @apply absolute z-10 invisible opacity-0 w-48 bg-black text-white text-center rounded-lg py-2 px-3 bottom-full left-1/2;
+    transform: translateX(-50%) translateY(-4px);
+    transition: opacity 0.3s ease-in-out;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .arbitrage-table td,
+    .arbitrage-table th {
+        @apply px-2 py-2 text-xs;
+    }
+
+    .volume-usd {
+        display: none;
+    }
+}

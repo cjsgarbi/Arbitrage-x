@@ -134,6 +134,7 @@ class DBHelpers:
             async with aiosqlite.connect(self.db_path) as db:
                 db.row_factory = aiosqlite.Row
                 async with db.execute('''
+                    SELECT * FROM trades
                     SELECT * FROM trades 
                     ORDER BY timestamp DESC
                     LIMIT ?
@@ -152,6 +153,7 @@ class DBHelpers:
                 db.row_factory = aiosqlite.Row
                 async with db.execute('''
                     SELECT * FROM opportunities
+                    ORDER BY timestamp DESC
                     ORDER BY timestamp DESC 
                     LIMIT ?
                 ''', (limit,)) as cursor:

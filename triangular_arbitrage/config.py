@@ -1,24 +1,56 @@
+"""
+Arquivo de configuração do bot
+"""
 from decimal import Decimal
 from typing import List, Dict
+import os
+from dotenv import load_dotenv
 
-# Configurações da Binance Testnet
+# Carrega variáveis de ambiente
+load_dotenv()
+
+def get_env_value(key, default=''):
+    """Retorna valor do ambiente com tratamento de string"""
+    value = os.getenv(key, default)
+    if isinstance(value, str):
+        return value.strip().strip('"\'')
+    return value
+
+# Configuração global de modos de operação
+TEST_MODE = get_env_value('TEST_MODE', 'true').lower() == 'true'
+SIMULATION_MODE = get_env_value('SIMULATION_MODE', 'false').lower() == 'true'
+
+if TEST_MODE and SIMULATION_MODE:
+    # Evita modos conflitantes
+    SIMULATION_MODE = False
+
+# Configurações da Binance
 BINANCE_CONFIG = {
-    'use_testnet': True,  # Força uso da testnet
-    'test_mode': True,    # Ativa modo de teste
-    'testnet_api_url': 'https://testnet.binance.vision/api/v3',
-    'testnet_stream_url': 'wss://testnet.binance.vision/stream',
+    'api_url': 'https://api.binance.com/api/v3',
+    'stream_url': 'wss://stream.binance.com:9443/ws',
     'rate_limits': {
         'orders_per_second': 5,
         'orders_per_day': 100000,
     },
-    'timeout': 10000,
-    'recv_window': 60000,  # Aumentado para 60 segundos
+    'timeout': 5000,
+    'recv_window': 5000,  # 5 segundos
     'order_types': ['LIMIT', 'MARKET'],
     'time_in_force': ['GTC', 'IOC', 'FOK'],
     'quote_assets': ['USDT', 'BTC', 'ETH', 'BNB', 'BUSD', 'USDC'],
     'max_requests_per_minute': 1200,
     'max_orders_per_second': 10,
-    'websocket_timeout': 5
+    'websocket_timeout': 5,
+    'adjust_time': True,  # Ajuste automático de tempo
+    'API_KEY': get_env_value('BINANCE_API_KEY'),
+    'API_SECRET': get_env_value('BINANCE_API_SECRET'),
+    'TESTNET': False,  # False para usar a rede principal da Binance
+    'RECV_WINDOW': 5000,  # Janela de recebimento em milissegundos
+    'TIMEOUT': 1000,  # Timeout das requisições em milissegundos
+    'WEBSOCKET': {
+        'PING_INTERVAL': 20,  # Intervalo de ping em segundos
+        'RECONNECT_DELAY': 1,  # Delay para reconexão em segundos
+        'MAX_RECONNECTS': 5  # Número máximo de tentativas de reconexão
+    }
 }
 
 # Configurações gerais
@@ -67,7 +99,10 @@ DISPLAY_CONFIG = {
         'good': 'green',
         'warning': 'yellow',
         'danger': 'red'
-    }
+    },
+    'UPDATE_INTERVAL': 0.1,  # Intervalo de atualização em segundos
+    'LOG_LEVEL': 'INFO',
+    'CONSOLE_OUTPUT': True
 }
 
 # Configurações de trading
@@ -76,17 +111,24 @@ TRADING_CONFIG = {
     'max_slippage': Decimal('0.002'),  # Aumentado para 0.2%
     'order_type': 'LIMIT',
     'time_in_force': 'IOC',  # Mudado para IOC para execução mais rápida
-    'test_mode': True,       # Força modo de teste
-    'fee_rate': 0.001,      # Taxa por operação (0.1%)
-    'min_profit': 0.2,      # Lucro mínimo para considerar oportunidade
-    'max_spread': 0.02,     # Spread máximo aceitável (2%)
-    'min_volume_btc': 0.01,  # Volume mínimo em BTC
+    'test_mode': TEST_MODE,  # Usa configuração global
+    'SIMULATION_MODE': SIMULATION_MODE,
+    'fee_rate': Decimal('0.001'),      # Taxa por operação (0.1%)
+    'min_profit': Decimal('0.2'),      # Lucro mínimo para considerar oportunidade
+    'max_spread': Decimal('0.02'),     # Spread máximo aceitável (2%)
+    'min_volume_btc': Decimal('0.01'),  # Volume mínimo em BTC
     'min_trades': 10,       # Mínimo de trades nas últimas 24h
     'demo_balance': {
         'BTC': '1.0',
         'ETH': '10.0',
         'BNB': '100.0',
         'USDT': '10000.0'
+    },
+    'FUNDS_ALLOCATION': {
+        'BTC': Decimal('0.01'),
+        'ETH': Decimal('0.1'),
+        'BNB': Decimal('1.0'),
+        'USDT': Decimal('1000.0')
     }
 }
 
@@ -124,7 +166,10 @@ DB_CONFIG = {
             'retention_days': 7,
             'max_rows': 10000
         }
-    }
+    },
+    'DB_FILE': 'data/arbitrage.db',
+    'BACKUP_DIR': 'data/backups',
+    'BACKUP_INTERVAL': 3600  # Intervalo de backup em segundos
 }
 
 # Configurações de ranking
