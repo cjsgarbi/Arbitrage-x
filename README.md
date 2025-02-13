@@ -223,21 +223,21 @@ Bot para identificar e executar oportunidades de arbitragem triangular na Binanc
 
 ## ⚠️ IMPORTANTE: Modos de Operação
 
-Este bot SEMPRE se conecta à Binance real (não usa testnet). O modo de operação é controlado pela configuração `TEST_MODE`:
+O bot opera EXCLUSIVAMENTE com a Binance real. O modo de operação é controlado pela configuração `TEST_MODE`:
 
 ### TEST_MODE=true (Padrão)
 - Conecta à Binance real
 - Monitora preços reais
 - Detecta oportunidades reais
 - NÃO envia ordens para a Binance
-- Perfeito para testar estratégias sem risco
+- Ideal para análise e monitoramento de oportunidades
 
 ### TEST_MODE=false
 - Conecta à Binance real
 - Monitora preços reais
 - Detecta oportunidades reais
 - ENVIA ordens reais para a Binance
-- Use com cautela, ordens serão executadas
+- Use com cautela, ordens serão executadas com dinheiro real
 
 Para alterar o modo:
 1. Edite o arquivo `.env`:
@@ -251,13 +251,14 @@ TEST_MODE=false
 
 ## Características
 
-- Monitoramento em tempo real de oportunidades de arbitragem
-- Interface de usuário rica e informativa
-- Modo simulação para testes sem risco
+- Monitoramento em tempo real via WebSocket da Binance
+- Interface de usuário com métricas detalhadas
 - Sistema de ranking de pares mais promissores
 - Logs detalhados e histórico de operações
 - Banco de dados SQLite para persistência
-- Tratamento robusto de erros
+- Tratamento robusto de erros e reconexões
+- Detecção de oportunidades em tempo real
+- Execução rápida de ordens quando em modo execução
 
 ## Requisitos
 
@@ -359,3 +360,4 @@ Este projeto está licenciado sob a MIT License - veja o arquivo LICENSE para de
 ## Disclaimer
 
 Trading de criptomoedas envolve riscos significativos. Use este bot por sua conta e risco. Os autores não são responsáveis por perdas financeiras.
+````

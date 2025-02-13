@@ -26,9 +26,9 @@ class BotCore:
         self.config = config
         self.logger = logging.getLogger(__name__)
         
-        # Modos de operação do sistema
-        self.test_mode = config.get('test_mode', True)
-        self.simulation_mode = config.get('SIMULATION_MODE', False)
+        # Configurações da API
+        self.api_key = config.get('BINANCE_KEY', '')
+        self.api_secret = config.get('BINANCE_SECRET', '')
         
         # Estado do bot
         self.client = None
@@ -52,17 +52,19 @@ class BotCore:
         self._active_tasks = set()
         self._cleanup_event = asyncio.Event()
         
-        # Inicializa componentes com configurações atualizadas
-        trading_config = TRADING_CONFIG.copy()
-        trading_config.update({
-            'test_mode': self.test_mode,
-            'SIMULATION_MODE': self.simulation_mode
-        })
-        
-        self.exchange = None  # Será definido em initialize()
+        # Modo de operação (true = apenas monitoramento, false = executa ordens)
+        self.test_mode = config.get('test_mode', True)
+
+        # Log do modo de operação
+        if self.test_mode:
+            self.logger.info("🔬 Bot iniciado em modo de monitoramento (sem execução de ordens)")
+        else:
+            self.logger.warning("⚠️ Bot iniciado em modo de execução - Ordens serão enviadas!")
+
+        # Inicializa componentes
         self.currency_core = CurrencyCore(
-            exchange=self.exchange,
-            config=trading_config
+            exchange=None,  # Será definido após conexão com Binance
+            config={'test_mode': self.test_mode}  # Passa apenas o modo de operação
         )
         
         self.backup_manager = BackupManager(
@@ -72,84 +74,107 @@ class BotCore:
             logs_dir='data/backups/logs'
         )
         
-        # TradingCore será inicializado após termos o client
-        self.trading_core: Optional[TradingCore] = None
+        self.trading_core = None
         self.events_core = EventsCore()
 
-        # Log do modo de operação
-        if self.test_mode:
-            self.logger.info("🔬 Bot iniciado em modo de teste (monitoramento apenas)")
-        elif self.simulation_mode:
-            self.logger.info("🎮 Bot iniciado em modo de simulação")
-        else:
-            self.logger.warning("⚠️ Bot iniciado em modo de execução real - Ordens serão enviadas!")
-
     async def initialize(self):
-        """Inicializa conexão com a Binance com baixa latência"""
+        """Inicializa o bot e estabelece conexão com a Binance"""
         try:
-            # Verifica e trata credenciais
-            api_key = str(BINANCE_CONFIG['API_KEY']).strip('"\'')
-            api_secret = str(BINANCE_CONFIG['API_SECRET']).strip('"\'')
+            self.start_time = datetime.now()
+            self.running = True
+
+            # Lista correta de endpoints da Binance
+            endpoints = [
+                ('api.binance.com', None),        # Principal
+                ('api1.binance.com', None),       # Backup 1
+                ('api2.binance.com', None),       # Backup 2
+                ('api3.binance.com', None)        # Backup 3
+            ]
             
-            if not api_key or not api_secret:
-                self.logger.error("❌ Credenciais da Binance não encontradas")
-                raise ValueError("Credenciais da Binance não configuradas")
-            
-            # Log seguro mostrando apenas parte das credenciais
-            self.logger.info(f"API Key detectada: {api_key[:4]}...{api_key[-4:]} (tamanho: {len(api_key)})")
-            self.logger.info(f"API Secret detectada: {api_secret[:4]}...{api_secret[-4:]} (tamanho: {len(api_secret)})")
-            
-            # Inicializa cliente com configurações otimizadas
-            try:
-                self.client = await AsyncClient.create(
-                    api_key=api_key,
-                    api_secret=api_secret,
-                    requests_params={'timeout': 30}  # Timeout aumentado
-                )
-                # Configura exchange para o currency_core
-                self.exchange = self.client
-                self.currency_core.exchange = self.client
-                
-                # Agora podemos inicializar o TradingCore com o client assíncrono
-                self.trading_core = TradingCore(client=self.client)
-                
-            except Exception as e:
-                self.logger.error(f"❌ Erro ao criar cliente Binance: {str(e)}")
-                raise
-            
-            # Configura WebSocket Manager com timeout otimizado
-            try:
-                self.bsm = BinanceSocketManager(self.client, user_timeout=60)
-            except Exception as e:
-                self.logger.error(f"❌ Erro ao criar WebSocket Manager: {str(e)}")
-                raise
-            
+            connected = False
+            for endpoint, _ in endpoints:
+                try:
+                    logger.info(f"🔄 Conectando à Binance via {endpoint}...")
+                    self.client = await AsyncClient.create(
+                        api_key=self.api_key,
+                        api_secret=self.api_secret,
+                        tld='com',
+                        requests_params={'timeout': 30},
+                        testnet=False
+                    )
+                    
+                    # Testa a conexão
+                    await self.client.ping()
+                    connected = True
+                    break
+                except Exception as e:
+                    logger.warning(f"Falha ao conectar via {endpoint}: {e}")
+                    if self.client:
+                        await self.client.close_connection()
+                        self.client = None
+                    continue
+
+            if not connected:
+                raise Exception("Não foi possível conectar à Binance. Verifique sua conexão e credenciais.")
+
             self.is_connected = True
-            self.logger.info("✅ Conectado à Binance")
+            logger.info("✅ Conectado à Binance com sucesso")
             
-            # Inicializa pares e streams
+            # Inicializa componentes com dados reais
+            await self._init_price_cache()
             await self._initialize_trading_pairs()
             await self._start_price_streams()
             
         except Exception as e:
-            self.logger.error(f"❌ Erro ao conectar: {str(e)}")
+            logger.error(f"❌ Erro ao inicializar bot: {e}")
             await self.cleanup()
+            raise
+
+    async def _init_price_cache(self):
+        """Inicializa o cache de preços"""
+        try:
+            if not self.client:
+                raise ValueError("Cliente Binance não inicializado")
+                
+            self.logger.info("🔄 Inicializando cache de preços...")
+            exchange_info = await self.client.get_exchange_info()
+            
+            for symbol_info in exchange_info['symbols']:
+                if symbol_info['status'] == 'TRADING':
+                    symbol = symbol_info['symbol']
+                    self.price_cache[symbol] = {
+                        'bid': 0.0,
+                        'ask': 0.0,
+                        'bidVolume': 0.0,
+                        'askVolume': 0.0,
+                        'timestamp': 0.0,
+                        'latency': 0.0
+                    }
+            self.logger.info(f"✅ Cache de preços inicializado com {len(self.price_cache)} símbolos")
+        except Exception as e:
+            self.logger.error(f"❌ Erro ao inicializar cache de preços: {e}")
             raise
 
     async def _initialize_trading_pairs(self):
         """Inicializa pares de trading válidos"""
         try:
+            if not self.client:
+                raise ValueError("Cliente Binance não inicializado")
+                
             # Obtém informações com retry
+            exchange_info = None
             for attempt in range(3):
                 try:
-                    if not self.client:
-                        raise ValueError("Cliente não inicializado")
-                    exchange_info = await self.client.get_exchange_info()
-                    break
+                    if self.client:
+                        exchange_info = await self.client.get_exchange_info()
+                        break
                 except Exception as e:
                     if attempt == 2:
                         raise
                     await asyncio.sleep(1)
+            
+            if not exchange_info:
+                raise ValueError("Não foi possível obter informações da exchange")
             
             # Filtra apenas pares ativos com USDT, BTC, ETH e BNB
             base_assets = {'USDT', 'BTC', 'ETH', 'BNB'}
@@ -170,23 +195,19 @@ class BotCore:
             raise
 
     async def _start_price_streams(self):
-        """Inicia streams de preços para todos os pares relevantes"""
+        """Inicia streams de preço para os pares monitorados"""
         try:
-            if not self.symbol_pairs:
-                raise ValueError("Nenhum par de trading inicializado")
-
-            # Divide em lotes menores para evitar sobrecarga
-            batch_size = 50
-            symbol_batches = [list(self.symbol_pairs)[i:i + batch_size]
-                            for i in range(0, len(self.symbol_pairs), batch_size)]
+            # Inicia streams em batches para evitar sobrecarga
+            symbols_list = list(self.symbol_pairs)
+            batch_size = 100  # Tamanho do batch recomendado pela Binance
             
-            # Cria tasks para cada batch
-            for batch in symbol_batches:
+            for i in range(0, len(symbols_list), batch_size):
+                batch = symbols_list[i:i + batch_size]
                 task = asyncio.create_task(self._handle_batch_stream(batch))
                 self._active_tasks.add(task)
                 task.add_done_callback(self._active_tasks.discard)
             
-            self.logger.info(f"✅ {len(self.symbol_pairs)} streams de preço iniciados")
+            self.logger.info(f"✅ {len(self.symbol_pairs)} streams de preço iniciados na Binance")
             
         except Exception as e:
             self.logger.error(f"❌ Erro ao iniciar streams: {e}")
@@ -196,9 +217,17 @@ class BotCore:
         """Gerencia um batch de streams"""
         while self.running:
             try:
+                if not self.client:
+                    self.logger.error("Cliente Binance não inicializado")
+                    await asyncio.sleep(5)
+                    continue
+                    
                 streams = [f"{pair.lower()}@bookTicker" for pair in symbols]
+                if not self.bsm and self.client:
+                    self.bsm = BinanceSocketManager(self.client)
+                    
                 if not self.bsm:
-                    self.logger.error("Socket manager não inicializado")
+                    self.logger.error("Não foi possível criar BinanceSocketManager")
                     await asyncio.sleep(5)
                     continue
                     
@@ -232,7 +261,7 @@ class BotCore:
                 await asyncio.sleep(5)
 
     async def _process_stream_message(self, msg):
-        """Processa mensagem do stream com prioridade em latência"""
+        """Processa mensagem do stream com dados reais da Binance"""
         try:
             data = msg.get('data', msg)
             if data.get('e') == 'bookTicker':
@@ -260,13 +289,13 @@ class BotCore:
                         'latency': latency
                     }
                     
-                    # Usa lock para atualizar cache
+                    # Atualiza cache com dados reais
                     async with self._price_cache_lock:
                         self.price_cache[symbol] = price_data
                     
                     # Detecta oportunidades se necessário
                     current_time = time.time()
-                    if current_time - self.last_process_time >= 0.05:
+                    if current_time - self.last_process_time >= 0.05:  # Verifica a cada 50ms
                         await self._detect_arbitrage_opportunities()
                         self.last_process_time = current_time
                         
@@ -281,34 +310,29 @@ class BotCore:
             self.logger.error(f"❌ Erro no processamento da mensagem: {e}")
 
     async def _process_price_update(self, symbol: str, data: Dict):
-        """Processa atualização de preço recebida"""
+        """Processa atualização de preço da Binance"""
         try:
             current_time = time.time()
             
-            # Valida dados recebidos
             if not isinstance(data, dict):
                 self.logger.warning(f"❌ Dados inválidos recebidos para {symbol}")
                 return
 
-            # Extrai dados relevantes
             price_data = {
                 'ask': float(data.get('askPrice', 0)),
                 'bid': float(data.get('bidPrice', 0)),
                 'volume': float(data.get('volume', 0)),
                 'timestamp': current_time,
-                'latency': (current_time - float(data.get('time', current_time))/1000) * 1000  # em ms
+                'latency': (current_time - float(data.get('time', current_time))/1000) * 1000
             }
 
-            # Valida preços
-            if price_data['ask'] <= 0 and price_data['bid'] <= 0:
+            if price_data['ask'] <= 0 or price_data['bid'] <= 0:
                 self.logger.warning(f"⚠️ Preços inválidos para {symbol}: ask={price_data['ask']}, bid={price_data['bid']}")
                 return
 
-            # Atualiza cache de preços
             async with self._price_cache_lock:
                 self.price_cache[symbol] = price_data
                 
-            # Log de debug
             self.logger.debug(
                 f"💹 Preço atualizado - {symbol} | "
                 f"Ask: {price_data['ask']:.8f} | "
@@ -317,8 +341,7 @@ class BotCore:
                 f"Lat: {price_data['latency']:.2f}ms"
             )
 
-            # Dispara detecção de oportunidades se tiver dados suficientes
-            if len(self.price_cache) >= 3:  # Mínimo 3 pares para triangular
+            if len(self.price_cache) >= 3:
                 await self._detect_arbitrage_opportunities()
                 
         except Exception as e:
@@ -456,22 +479,22 @@ class BotCore:
             opportunities = []
             current_time = datetime.now()
             
-            # Copia cache de preços para evitar modificações durante processamento
+            # Usa dados reais da Binance
             async with self._price_cache_lock:
                 price_cache = self.price_cache.copy()
             
-            # Usa apenas pares com dados recentes (últimos 5 segundos)
+            # Usa apenas dados recentes (últimos 5 segundos)
             recent_pairs = {
                 symbol: data for symbol, data in price_cache.items()
                 if isinstance(data, dict) and 'timestamp' in data and time.time() - data['timestamp'] < 5
             }
 
             if not recent_pairs:
-                self.logger.debug("Aguardando dados de preços...")
+                self.logger.debug("Aguardando dados de preços da Binance...")
                 return
 
-            # Base pairs para triangular arbitrage (expandido para mais possibilidades)
-            base_pairs = ['BTC', 'ETH', 'BNB', 'USDT', 'BUSD', 'USDC']
+            # Base pairs para triangular arbitrage
+            base_pairs = ['BTC', 'ETH', 'BNB', 'USDT', 'BUSD']
             
             for base in base_pairs:
                 base_markets = [p for p in recent_pairs if base in p]
@@ -486,7 +509,6 @@ class BotCore:
                             asset1 = pair1.replace(base, '')
                             asset2 = pair2.replace(base, '')
 
-                            # Garante que estamos usando os pares corretos
                             if not asset1 or not asset2:
                                 continue
                             
@@ -496,18 +518,15 @@ class BotCore:
                                 if pair3 not in recent_pairs:
                                     continue
                             
-                            # Calcula profit apenas se todos os pares têm dados válidos
+                            # Calcula profit com dados reais
                             price1_data = recent_pairs[pair1]
                             price2_data = recent_pairs[pair2]
                             price3_data = recent_pairs[pair3]
 
-                            # Validação dos dados
-                            required_fields = ['ask', 'bid']
-                            if not all(isinstance(d, dict) and all(field in d for field in required_fields)
+                            if not all(isinstance(d, dict) and all(field in d for field in ['ask', 'bid'])
                                      for d in [price1_data, price2_data, price3_data]):
                                 continue
 
-                            # Calcula o profit
                             profit = self._calculate_triangular_profit(
                                 pair1, pair2, pair3,
                                 price1_data,
@@ -515,7 +534,7 @@ class BotCore:
                                 price3_data
                             )
                             
-                            if profit and profit > 0.1:  # Apenas oportunidades com lucro > 0.1%
+                            if profit and profit > 0.1:  # Oportunidades com lucro > 0.1%
                                 volume = self._calculate_max_volume(
                                     pair1, pair2, pair3,
                                     price1_data,
@@ -549,17 +568,17 @@ class BotCore:
                                 }
                                 opportunities.append(opportunity)
                                 
-                                # Log da oportunidade encontrada
+                                # Log da oportunidade real encontrada
                                 self.logger.info(
-                                    f"💰 Nova oportunidade: {base}→{asset1}→{asset2} | "
-                                    f"Profit: {profit:.2f}% | Volume: {volume:.8f} BTC"
+                                    f"💰 Oportunidade real: {base}→{asset1}→{asset2} | "
+                                    f"Profit: {profit:.2f}% | Volume: {volume:.8f} {base}"
                                 )
 
                         except Exception as e:
                             self.logger.debug(f"Erro ao processar par: {e}")
                             continue
             
-            # Atualiza apenas se encontrou oportunidades
+            # Atualiza oportunidades encontradas
             if opportunities:
                 self.opportunities = sorted(
                     opportunities,
@@ -571,7 +590,7 @@ class BotCore:
                 # Log de performance
                 process_time = time.time() - start_time
                 self.processing_times.append(process_time)
-                self.logger.debug(f"⚡ Processamento em {process_time*1000:.2f}ms | {len(opportunities)} oportunidades")
+                self.logger.debug(f"⚡ Processamento em {process_time*1000:.2f}ms | {len(opportunities)} oportunidades reais")
                 
         except Exception as e:
             self.logger.error(f"❌ Erro na detecção de arbitragem: {e}")
@@ -646,24 +665,37 @@ class BotCore:
                 if task is not asyncio.current_task():
                     task.cancel()
 
-    async def execute_order(self, symbol, side, quantity, price=None, order_type=FUTURE_ORDER_TYPE_MARKET):
-        """Executa ordens com baixa latência"""
+    async def execute_order(self, symbol: str, side: str, quantity: float, price: Optional[float] = None):
+        """Executa ordens na Binance"""
         try:
             if not self.client:
-                raise ValueError("Cliente não inicializado")
-                
-            order = await self.client.create_order(
-                symbol=symbol,
-                side=side,
-                type=order_type,
-                quantity=quantity,
-                price=price,
-                timeInForce=TIME_IN_FORCE_IOC  # Usando constante da Binance
-            )
-            self.logger.info(f"Ordem executada: {order}")
+                raise ValueError("Cliente Binance não inicializado")
+
+            if self.test_mode:
+                self.logger.info(f"📝 [MONITORAMENTO] Ordem identificada mas não executada: {symbol} {side} {quantity} @ {price}")
+                return None
+
+            order_params = {
+                'symbol': symbol,
+                'side': side,
+                'type': FUTURE_ORDER_TYPE_MARKET if price is None else 'LIMIT',
+                'quantity': quantity,
+                'timeInForce': TIME_IN_FORCE_IOC
+            }
+            
+            if price:
+                order_params['price'] = price
+
+            order = await self.client.create_order(**order_params)
+            
+            self.logger.info(f"✅ Ordem executada na Binance: {order}")
             return order
+            
+        except BinanceAPIException as e:
+            self.logger.error(f"❌ Erro da API Binance: {e.message}")
+            return None
         except Exception as e:
-            self.logger.error(f"Erro na ordem: {e}")
+            self.logger.error(f"❌ Erro ao executar ordem: {e}")
             return None
 
     def get_performance_metrics(self):
@@ -676,5 +708,7 @@ class BotCore:
             'opportunities': len(self.opportunities),
             'pairs_monitored': len(self.symbol_pairs),
             'cache_size': len(self.price_cache),
-            'uptime': str(datetime.now() - self.start_time)
+            'uptime': str(datetime.now() - self.start_time),
+            'mode': 'monitoramento' if self.test_mode else 'execução',
+            'status': 'conectado' if self.is_connected else 'desconectado'
         }
