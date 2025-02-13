@@ -27,8 +27,12 @@ class BotCore:
         self.logger = logging.getLogger(__name__)
         
         # Configurações da API
-        self.api_key = config.get('BINANCE_KEY', '')
-        self.api_secret = config.get('BINANCE_SECRET', '')
+        self.api_key = config.get('BINANCE_API_KEY', '')  # Corrigido nome da chave
+        self.api_secret = config.get('BINANCE_API_SECRET', '')  # Corrigido nome da chave
+        
+        if not self.api_key or not self.api_secret:
+            self.logger.error("❌ Credenciais da Binance não encontradas. Verifique o arquivo .env")
+            raise ValueError("Credenciais da Binance não configuradas")
         
         # Estado do bot
         self.client = None

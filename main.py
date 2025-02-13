@@ -1,13 +1,18 @@
 import asyncio
 import sys
+import os
 from triangular_arbitrage.utils.logger import Logger
 from triangular_arbitrage.core.bot_core import BotCore
 from triangular_arbitrage.ui.web.app import WebDashboard
 import uvicorn
 import logging
-from triangular_arbitrage.config import DB_CONFIG, DISPLAY_CONFIG, TRADING_CONFIG
+from triangular_arbitrage.config import DB_CONFIG, DISPLAY_CONFIG
+from dotenv import load_dotenv
 
 logger = logging.getLogger(__name__)
+
+# Carrega variáveis de ambiente
+load_dotenv()
 
 async def init_components():
     """Inicializa os componentes do sistema de forma segura"""
@@ -15,10 +20,17 @@ async def init_components():
     dashboard = None
     
     try:
+        # Prepara configuração com credenciais do .env
+        config = {
+            'BINANCE_API_KEY': os.getenv('BINANCE_API_KEY', '').strip(),
+            'BINANCE_API_SECRET': os.getenv('BINANCE_API_SECRET', '').strip(),
+            'test_mode': os.getenv('TEST_MODE', 'true').lower() == 'true'
+        }
+
         # Inicializa bot core com retry
         for attempt in range(3):  # 3 tentativas
             try:
-                bot = BotCore(db=DB_CONFIG, display=DISPLAY_CONFIG, config=TRADING_CONFIG)
+                bot = BotCore(db=DB_CONFIG, display=DISPLAY_CONFIG, config=config)
                 await bot.initialize()
                 break
             except Exception as e:
@@ -70,7 +82,7 @@ async def main():
             app=dashboard.app,
             host="127.0.0.1",
             port=8000,
-            log_level="info",  # Aumentado para info para ver mais detalhes
+            log_level="info",
             reload=False,
             workers=1,
             timeout_keep_alive=30,
@@ -78,19 +90,12 @@ async def main():
         )
         server = uvicorn.Server(config)
 
-        # Inicia bot e servidor em paralelo com timeout
-        try:
-            await asyncio.wait_for(
-                asyncio.gather(
-                    server.serve(),
-                    bot.start(),
-                    return_exceptions=True
-                ),
-                timeout=None  # Sem timeout pois deve rodar indefinidamente
-            )
-        except asyncio.TimeoutError:
-            logger.error("Timeout ao executar os serviços")
-            raise
+        # Inicia bot e servidor em paralelo
+        await asyncio.gather(
+            server.serve(),
+            bot.start(),
+            return_exceptions=True
+        )
 
     except KeyboardInterrupt:
         logger.info("Encerrando sistema...")
