@@ -1,5 +1,6 @@
-from binance.websocket.spot.websocket_client import SpotWebsocketClient
+from binance.websockets import BinanceWebsocketClient as BinanceWS
 from binance.client import AsyncClient
+from binance import ThreadedWebsocketManager
 import asyncio
 import json
 import logging
@@ -13,7 +14,7 @@ class BinanceWebsocketClient:
         self.api_key = api_key
         self.api_secret = api_secret
         self.client = None
-        self.bm = None
+        self.twm = None  # ThreadedWebsocketManager
         self.conn_key = None
         self._callbacks = []
         self._running = True
@@ -21,6 +22,7 @@ class BinanceWebsocketClient:
         self._connection_lock = asyncio.Lock()
         self._cleanup_event = asyncio.Event()
         self._active_tasks = set()
+        self._last_heartbeat = time.time()
 
     async def connect(self, max_retries=3):
         """Estabelece conexão com Binance Websocket com retentativas"""
@@ -31,41 +33,42 @@ class BinanceWebsocketClient:
                 try:
                     logger.info(f"Tentativa {retry_count + 1} de conexão com Binance WebSocket")
                     
-                    # Fecha conexões existentes antes de reconectar
                     await self._cleanup_connections()
                     
-                    # Configura client com timeout mais longo
                     self.client = await AsyncClient.create(
                         self.api_key,
                         self.api_secret,
                         requests_params={'timeout': 30}
                     )
                     
-                    # Configura websocket client
-                    self.bm = SpotWebsocketClient()
-                    await self.bm.connect()
+                    self.twm = ThreadedWebsocketManager(
+                        api_key=self.api_key,
+                        api_secret=self.api_secret
+                    )
+                    self.twm.start()
                     
                     # Testa conexão
                     for _ in range(3):
                         try:
-                            await self.client.ping()
-                            logger.info("Binance WebSocket Client conectado com sucesso")
-                            self._reconnect_delay = 1  # Reset delay após sucesso
-                            return True
+                            if self.client:
+                                await self.client.ping()
+                                logger.info("Binance WebSocket Client conectado com sucesso")
+                                self._reconnect_delay = 1
+                                self._last_heartbeat = time.time()
+                                return True
                         except Exception as e:
-                            if _ < 2:  # Tenta mais 2 vezes antes de desistir
+                            if _ < 2:
                                 await asyncio.sleep(1)
                                 continue
                             raise
                                 
                 except Exception as e:
                     retry_count += 1
-                    logger.error(f"Falha na tentativa {retry_count}/{max_retries}: {str(e)}", exc_info=True)
+                    logger.error(f"Falha na tentativa {retry_count}: {e}")
                     
                     if retry_count < max_retries and self._running:
-                        logger.info(f"Aguardando {self._reconnect_delay}s antes da próxima tentativa")
                         await asyncio.sleep(self._reconnect_delay)
-                        self._reconnect_delay = min(self._reconnect_delay * 2, 60)  # Exponential backoff até 60s
+                        self._reconnect_delay = min(self._reconnect_delay * 2, 60)
                         continue
                     
                     logger.error(f"Falha ao conectar após {max_retries} tentativas")
@@ -73,109 +76,81 @@ class BinanceWebsocketClient:
             
             return False
 
-    def add_callback(self, callback):
-        """Adiciona callback para processamento de mensagens"""
-        self._callbacks.append(callback)
-
     async def start_multiplex_socket(self, streams):
         """Inicia socket multiplexado com reconexão automática"""
         while self._running:
             try:
                 logger.info(f"Iniciando socket multiplexado para {len(streams)} streams")
                 
-                if not self.bm:
-                    logger.error("Socket client não inicializado")
+                if not self.twm:
+                    logger.error("Socket manager não inicializado")
                     await asyncio.sleep(5)
                     continue
-                    
-                # Subscribe to streams
-                await self.bm.multiplex_subscribe(
-                    callbacks=self._callbacks,
+
+                def handle_socket_message(msg):
+                    asyncio.create_task(self._process_message(msg))
+                
+                self.conn_key = self.twm.start_multiplex_socket(
+                    callback=handle_socket_message,
                     streams=streams
                 )
                 
-                logger.info(f"Socket iniciado para {len(streams)} streams")
-                
-                # Inicia heartbeat
-                last_heartbeat = time.time()
-                message_count = 0
-                error_count = 0
+                logger.info(f"Socket multiplexado iniciado: {len(streams)} streams")
                 
                 while self._running:
-                    try:
-                        current_time = time.time()
-                        
-                        # Atualiza heartbeat com maior intervalo
-                        if current_time - last_heartbeat >= 55:  # 55s para estar dentro do timeout de 60s
-                            if self.client:
-                                await self.client.ping()
-                                last_heartbeat = current_time
-                                logger.debug("Heartbeat atualizado")
-                        
-                        # Aguarda um pouco para não sobrecarregar
-                        await asyncio.sleep(0.1)
-                                
-                    except Exception as e:
-                        if not self._running:
-                            break
-                        error_count += 1
-                        logger.error(f"Erro no processamento: {e}", exc_info=True)
-                        await asyncio.sleep(1)
-                        continue
-                                
+                    await asyncio.sleep(1)
+                    current_time = time.time()
+                    
+                    # Verifica heartbeat
+                    if current_time - self._last_heartbeat >= 55:
+                        if self.client:
+                            await self.client.ping()
+                            self._last_heartbeat = current_time
+                    
             except Exception as e:
                 if not self._running:
                     break
-                logger.error(f"Erro fatal no socket: {e}", exc_info=True)
+                logger.error(f"Erro no socket: {e}")
                 await asyncio.sleep(5)
+                continue
+
+    async def _process_message(self, msg):
+        """Processa mensagens recebidas do WebSocket"""
+        try:
+            if msg.get('e') == 'error':
+                logger.error(f"Erro no WebSocket: {msg.get('m')}")
+                return
+            
+            for callback in self._callbacks:
+                try:
+                    await callback(msg)
+                except Exception as e:
+                    logger.error(f"Erro no callback: {e}")
+                    
+        except Exception as e:
+            logger.error(f"Erro ao processar mensagem: {e}")
+
+    def add_callback(self, callback):
+        """Adiciona callback para processamento de mensagens"""
+        self._callbacks.append(callback)
 
     async def _cleanup_connections(self):
         """Limpa conexões existentes"""
         try:
-            if self.bm:
-                try:
-                    await self.bm.stop()
-                except Exception as e:
-                    logger.error(f"Erro ao parar socket: {e}")
-
+            if self.twm:
+                self.twm.stop()
             if self.client:
-                try:
-                    await self.client.close_connection()
-                except Exception as e:
-                    logger.error(f"Erro ao fechar cliente: {e}")
-                    
+                await self.client.close_connection()
         except Exception as e:
-            logger.error(f"Erro na limpeza de conexões: {e}")
+            logger.error(f"Erro na limpeza: {e}")
         finally:
-            self.bm = None
+            self.twm = None
             self.client = None
             self.conn_key = None
 
     async def close(self):
-        """Fecha conexões e limpa recursos de forma segura"""
-        try:
-            logger.info("Iniciando fechamento do WebSocket Client...")
-            
-            # Sinaliza para parar
-            self._running = False
-            
-            # Aguarda tasks ativas finalizarem
-            if self._active_tasks:
-                logger.info(f"Aguardando {len(self._active_tasks)} tasks finalizarem...")
-                await asyncio.gather(*self._active_tasks, return_exceptions=True)
-            
-            # Limpa conexões
-            await self._cleanup_connections()
-            
-            # Limpa recursos
-            self._callbacks.clear()
-            self._active_tasks.clear()
-            
-            # Sinaliza cleanup completo
-            self._cleanup_event.set()
-            
-            logger.info("Binance WebSocket Client finalizado com sucesso")
-            
-        except Exception as e:
-            logger.error(f"Erro ao finalizar recursos: {e}", exc_info=True)
-            raise
+        """Fecha conexões e limpa recursos"""
+        self._running = False
+        await self._cleanup_connections()
+        self._callbacks.clear()
+        self._cleanup_event.set()

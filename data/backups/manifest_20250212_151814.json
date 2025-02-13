@@ -1,0 +1,7 @@
+{
+  "timestamp": "20250212_151814",
+  "database": null,
+  "configs": "data\\backups\\config\\config_20250212_151814.tar.gz",
+  "logs": "data\\backups\\logs\\logs_20250212_151814.tar.gz",
+  "retention_days": 30
+}

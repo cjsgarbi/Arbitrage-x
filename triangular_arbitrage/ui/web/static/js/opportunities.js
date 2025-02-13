@@ -57,9 +57,6 @@ class OpportunitiesManager {
                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-300">
                     ${parseFloat(opp.volume).toFixed(8)}
                 </td>
-                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-300">
-                    ${(parseFloat(opp.volume) * profit / 100).toFixed(8)}
-                </td>
                 <td class="px-6 py-4 whitespace-nowrap">
                     <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${statusClass}">
                         ${opp.status}
@@ -129,11 +126,11 @@ class OpportunitiesManager {
     }
 
     monitorOpportunity(route) {
-        analyzer.startMonitoring(route);
+        window.realtimeMonitor.startMonitoring(route);
     }
 
     analyzeOpportunity(route) {
-        analyzer.analyze(route);
+        window.opportunityAnalyzer.analyze(route);
     }
 }
 

@@ -10,8 +10,18 @@ import logging
 from pathlib import Path
 import sys
 import time
+import statistics
 
+# Ajuste dos imports relativos para absolutos
+from triangular_arbitrage.utils.log_config import setup_logging, JsonFormatter
+from triangular_arbitrage.utils.dashboard_logger import DashboardLogger
+
+# Configuração inicial dos loggers
+loggers = setup_logging()
 logger = logging.getLogger(__name__)
+debug_logger = logging.getLogger('debug')
+error_logger = logging.getLogger('error')
+dashboard_logger = DashboardLogger()
 
 class ConnectionManager:
     def __init__(self):
@@ -159,6 +169,20 @@ class WebDashboard:
         self._cleanup_event = asyncio.Event()
         self._tasks = set()
         
+        # Configuração de logging
+        self.logger = logger
+        self.debug_logger = debug_logger
+        self.error_logger = error_logger
+        self.dashboard_logger = dashboard_logger
+        
+        # Setup inicial de métricas
+        self._last_metrics_update = datetime.now()
+        self._broadcast_metrics = {
+            'latency': [],
+            'errors': 0,
+            'messages_sent': 0
+        }
+        
         # CORS configuration
         self.app.add_middleware(
             CORSMiddleware,
@@ -194,79 +218,260 @@ class WebDashboard:
         """Broadcast data para clientes WebSocket com otimizações"""
         last_opportunities = None
         last_broadcast = 0
-        min_interval = 0.1  # Intervalo mínimo entre broadcasts
-        
+        min_interval = 0.1  # 100ms mínimo entre broadcasts
+
         while not self._cleanup_event.is_set():
             try:
+                start_time = time.time()
                 current_time = time.time()
+                current_datetime = datetime.now()
                 
-                # Verifica se tem conexões ativas
                 if not self.manager.active_connections:
                     await asyncio.sleep(min_interval)
                     continue
 
-                # Obtém dados atualizados
-                opportunities = getattr(self.bot_core, 'opportunities', [])
-                performance = self.bot_core.get_performance_metrics()
+                debug_logger.debug(f"Verificando oportunidades. Conexões: {len(self.manager.active_connections)}")
                 
-                # Verifica se dados mudaram e se passou tempo mínimo
+                opportunities = getattr(self.bot_core, 'opportunities', [])
+                if not isinstance(opportunities, list):
+                    opportunities = []
+                
+                opportunities = getattr(self.bot_core, 'opportunities', [])
+                if not isinstance(opportunities, list):
+                    opportunities = []
+                
+                debug_logger.debug(f"Oportunidades encontradas: {len(opportunities)}")
+                
+                # Registra métricas de performance
+                broadcast_time = time.time() - start_time
+                self._broadcast_metrics['latency'].append(broadcast_time)
+                if len(self._broadcast_metrics['latency']) > 100:
+                    self._broadcast_metrics['latency'].pop(0)
+                
+                # Alerta sobre latência alta
+                if broadcast_time > 0.5:  # 500ms threshold
+                    logger.warning(f"High broadcast latency: {broadcast_time:.2f}s")
+
+                # Log de métricas periódico
+                if (datetime.now() - self._last_metrics_update).seconds >= 60:
+                    self._log_metrics()
+                    self._last_metrics_update = datetime.now()
+
+                # Calcula métricas das últimas 24h
+                yesterday = current_datetime - timedelta(days=1)
+                opportunities_24h = []
+                
+                for opp in opportunities:
+                    try:
+                        opp_timestamp = opp.get('timestamp')
+                        if opp_timestamp:
+                            if isinstance(opp_timestamp, str):
+                                opp_time = datetime.fromisoformat(opp_timestamp)
+                            else:
+                                opp_time = datetime.fromtimestamp(float(opp_timestamp))
+                            
+                            if opp_time > yesterday:
+                                opportunities_24h.append(opp)
+                    except (ValueError, TypeError) as e:
+                        logger.error(f"❌ Erro ao processar timestamp: {e}")
+                        continue
+                
+                volume_24h = sum(float(opp.get('a_volume', 0)) for opp in opportunities_24h)
+                profit_24h = sum(float(opp.get('profit', 0)) for opp in opportunities_24h)
+                
                 if (opportunities != last_opportunities and 
                     current_time - last_broadcast >= min_interval):
                     
-                    # Formata oportunidades para o formato esperado pelo frontend
+                    # Formata oportunidades para o frontend
                     formatted_opportunities = []
                     for opp in opportunities:
-                        formatted_opp = {
-                            'route': f"{opp.get('a_step_from')}→{opp.get('b_step_from')}→{opp.get('c_step_from')}",
-                            'profit': float(opp.get('profit', 0)),
-                            'volume': float(opp.get('a_volume', 0)),
-                            'confidence': 'high' if float(opp.get('score', 0)) > 80 else 'medium',
-                            'timestamp': opp.get('timestamp', datetime.now().isoformat())
-                        }
-                        formatted_opportunities.append(formatted_opp)
-                    
+                        try:
+                            profit = float(opp.get('profit', 0))
+                            volume = float(opp.get('a_volume', 0))
+                            
+                            # Garante que sempre teremos um timestamp válido
+                            try:
+                                timestamp = opp.get('timestamp')
+                                if timestamp:
+                                    if isinstance(timestamp, str):
+                                        _ = datetime.fromisoformat(timestamp)  # Valida o formato
+                                    else:
+                                        timestamp = datetime.fromtimestamp(float(timestamp)).isoformat()
+                                else:
+                                    timestamp = current_datetime.isoformat()
+                            except (ValueError, TypeError):
+                                timestamp = current_datetime.isoformat()
+                            
+                            formatted_opp = {
+                                'id': opp.get('id', str(current_time)),
+                                'route': f"{opp.get('a_step_from')}→{opp.get('b_step_from')}→{opp.get('c_step_from')}",
+                                'profit': profit,
+                                'volume': volume,
+                                'latency': float(opp.get('latency', 0)),
+                                'risk': {
+                                    'volatility': self._calculate_volatility_risk(opp),
+                                    'liquidity': self._calculate_liquidity_risk(opp)
+                                },
+                                'confidence': self._calculate_confidence(profit),
+                                'timestamp': timestamp
+                            }
+                            formatted_opportunities.append(formatted_opp)
+                            logger.debug(f"📈 Oportunidade formatada: {formatted_opp['route']} | Profit: {profit:.2f}%")
+                        except (ValueError, TypeError) as e:
+                            logger.error(f"❌ Erro ao formatar oportunidade: {e}")
+                            continue
+
                     message = {
                         'type': 'opportunity',
                         'data': formatted_opportunities,
-                        'timestamp': datetime.now().isoformat(),
-                        'status': {
-                            'connected': self.bot_core.is_connected,
-                            'hasData': bool(opportunities),
-                            'lastUpdate': getattr(self.bot_core, 'last_update', datetime.now()).isoformat(),
-                            'performance': {
-                                'opportunities_found': len(opportunities),
-                                'trades_executed': len(getattr(self.bot_core, 'trades', [])),
-                                'volume_24h': sum(float(opp.get('a_volume', 0)) for opp in opportunities),
-                                **performance
-                            }
-                        }
+                        'metrics': {
+                            'volume_24h': round(volume_24h, 8),
+                            'profit_24h': round(profit_24h, 4),
+                            'active_routes': len(formatted_opportunities),
+                            'success_rate': self.bot_core.get_performance_metrics().get('success_rate', 0),
+                            'avg_slippage': self.bot_core.get_performance_metrics().get('avg_slippage', 0),
+                        },
+                        'timestamp': current_datetime.isoformat()
                     }
                     
-                    logger.debug(f"Enviando update com {len(opportunities)} oportunidades")
+                    logger.debug(f"📤 Enviando {len(formatted_opportunities)} oportunidades via WebSocket")
                     await self.manager.broadcast(message)
-                    
                     last_opportunities = opportunities
                     last_broadcast = current_time
+                    logger.debug(f"✅ Broadcast concluído em {(time.time() - current_time)*1000:.2f}ms")
+                
+                
+                
+                # Log de métricas de performance
+                broadcast_time = time.time() - start_time
+                self.dashboard_logger.log_performance({
+                    'latency': broadcast_time * 1000,
+                    'opportunities_count': len(opportunities),
+                    'connections_count': len(self.manager.active_connections),
+                    'cache': getattr(self.bot_core, 'price_cache', {})
+                })
                 
                 await asyncio.sleep(min_interval)
                 
             except asyncio.CancelledError:
-                logger.info("Broadcast task cancelada")
                 break
             except Exception as e:
-                logger.error(f"Erro no broadcast: {str(e)}")
-                import traceback
-                logger.error(f"Detalhes: {traceback.format_exc()}")
+                self._broadcast_metrics['errors'] += 1
+                logger.error(f"Broadcast error: {e}", extra={
+                    'component': 'broadcast',
+                    'active_connections': len(self.manager.active_connections),
+                    'opportunities_count': len(opportunities) if 'opportunities' in locals() else 0
+                })
+                self.dashboard_logger.log_error('broadcast_failed', str(e), {
+                    'active_connections': len(self.manager.active_connections),
+                    'last_broadcast': last_broadcast if 'last_broadcast' in locals() else 0
+                })
                 await asyncio.sleep(1)
+
+    def _calculate_status(self, profit: float) -> str:
+        if profit > 1.0:
+            return 'excellent'
+        elif profit > 0.5:
+            return 'good'
+        return 'viable'
+
+    def _calculate_confidence(self, profit: float) -> int:
+        if profit > 1.5:
+            return 90
+        elif profit > 0.5:
+            return 70
+        return 50
+
+    def _calculate_cache_health(self) -> float:
+        """Calcula saúde do cache baseado em dados recentes"""
+        try:
+            if not hasattr(self.bot_core, 'price_cache'):
+                return 0.0
+                
+            current_time = time.time()
+            recent_prices = [
+                1 for timestamp in (
+                    data.get('timestamp', 0) 
+                    for data in self.bot_core.price_cache.values()
+                )
+                if current_time - timestamp < 5
+            ]
+            
+            if not self.bot_core.price_cache:
+                return 0.0
+                
+            return round((len(recent_prices) / len(self.bot_core.price_cache)) * 100, 2)
+        except Exception as e:
+            logger.error(f"Erro ao calcular saúde do cache: {e}")
+            return 0.0
+
+    def _calculate_volatility_risk(self, opportunity: Dict) -> str:
+        """Calcula risco de volatilidade baseado no histórico"""
+        try:
+            # Tenta calcular baseado no histórico de preços
+            recent_prices = self.bot_core.price_cache.get(
+                opportunity.get('a_step_from'), 
+                {}
+            ).get('recent_prices', [])
+
+            if recent_prices and len(recent_prices) >= 10:
+                # Calcula volatilidade usando desvio padrão dos últimos preços
+                std_dev = statistics.stdev(recent_prices[-10:])
+                mean_price = statistics.mean(recent_prices[-10:])
+                volatility = (std_dev / mean_price) * 100 if mean_price > 0 else 0
+                
+                if volatility < 0.5:
+                    return "Baixa"
+                elif volatility < 1.5:
+                    return "Média"
+                return "Alta"
+            
+            # Se não tiver dados suficientes, calcula baseado no profit e volume
+            profit = float(opportunity.get('profit', 0))
+            volume = float(opportunity.get('a_volume', 0))
+            
+            if profit > 1.5 and volume > 0.1:
+                return "Baixa"
+            elif profit > 0.8 and volume > 0.05:
+                return "Média"
+            return "Alta"
+            
+        except (ValueError, TypeError, Exception):
+            return "Média"  # Valor padrão em caso de erro
+
+    def _calculate_liquidity_risk(self, opportunity: Dict) -> str:
+        """Calcula risco de liquidez baseado no volume"""
+        try:
+            volume = float(opportunity.get('a_volume', 0))
+            
+            if volume > 0.5:  # Volume maior que 0.5 BTC
+                return 'low'
+            elif volume > 0.1:  # Volume maior que 0.1 BTC
+                return 'medium'
+            return 'high'
+        except (ValueError, TypeError):
+            return 'high'
 
     async def _handle_websocket(self, websocket: WebSocket):
         """Gerencia conexão WebSocket individual"""
+        client_id = f"client_{id(websocket)}"
+        self.dashboard_logger.log_connection(client_id, 'connected', {
+            'remote': str(websocket.client),
+            'time': datetime.now().isoformat()
+        })
+        
         await self.manager.connect(websocket)
         try:
             while not self._cleanup_event.is_set():
                 try:
                     data = await websocket.receive_text()
                     message = json.loads(data)
+                    
+                    # Log da mensagem recebida
+                    self.dashboard_logger.log_websocket_event('message_received', client_id, {
+                        'message_type': message.get('type'),
+                        'timestamp': datetime.now().isoformat()
+                    })
 
                     if message.get('type') == 'ping':
                         await websocket.send_text(json.dumps({
@@ -294,15 +499,27 @@ class WebDashboard:
                         await self._send_full_update(websocket)
 
                 except WebSocketDisconnect:
+                    self.dashboard_logger.log_connection(client_id, 'disconnected', {
+                        'reason': 'client_disconnected',
+                        'time': datetime.now().isoformat()
+                    })
                     logger.info("Cliente WebSocket desconectado")
                     break
                 except Exception as e:
+                    self.dashboard_logger.log_websocket_event('error', client_id, {
+                        'error': str(e),
+                        'timestamp': datetime.now().isoformat()
+                    })
                     logger.error(f"Erro no WebSocket: {str(e)}")
                     await asyncio.sleep(1)
                     continue
 
         finally:
             await self.manager.disconnect(websocket)
+            self.dashboard_logger.log_connection(client_id, 'connection_closed', {
+                'reason': 'cleanup',
+                'time': datetime.now().isoformat()
+            })
 
     async def _monitor_pair(self, websocket: WebSocket, pair: str):
         """Monitora um par específico em tempo real"""
@@ -340,19 +557,61 @@ class WebDashboard:
 
     async def _send_opportunities_update(self, websocket: WebSocket):
         """Envia atualização de oportunidades"""
-        opportunities = getattr(self.bot_core, 'opportunities', [])
-        formatted_opportunities = [{
-            'route': f"{opp.get('a_step_from')}→{opp.get('b_step_from')}→{opp.get('c_step_from')}",
-            'profit': float(opp.get('profit', 0)),
-            'volume': float(opp.get('a_volume', 0)),
-            'status': 'excellent' if float(opp.get('profit', 0)) > 1.0 else 'good',
-            'timestamp': opp.get('timestamp', datetime.now().isoformat())
-        } for opp in opportunities]
+        try:
+            opportunities = getattr(self.bot_core, 'opportunities', [])
+            
+            formatted_opportunities = []
+            for opp in opportunities:
+                try:
+                    profit = float(opp.get('profit', 0))
+                    volume = float(opp.get('a_volume', 0))
+                    
+                    formatted_opp = {
+                        'id': opp.get('id', str(time.time())),
+                        'route': f"{opp.get('a_step_from')}→{opp.get('b_step_from')}→{opp.get('c_step_from')}",
+                        'profit': profit,
+                        'slippage': float(opp.get('slippage', 0.005)),
+                        'executionTime': float(opp.get('latency', 0)) / 1000,
+                        'liquidity': self._calculate_liquidity_level(volume),
+                        'risk': self._calculate_risk_level(profit, volume),
+                        'spread': float(opp.get('spread', 0)),
+                        'volatility': self._calculate_volatility_risk(opp),
+                        'confidence': self._calculate_confidence(profit),
+                        'timestamp': opp.get('timestamp', datetime.now().isoformat())
+                    }
+                    formatted_opportunities.append(formatted_opp)
+                    
+                except (ValueError, TypeError) as e:
+                    logger.error(f"❌ Erro ao formatar oportunidade: {e}")
+                    continue
 
-        await websocket.send_text(json.dumps({
-            'type': 'opportunities_update',
-            'data': formatted_opportunities
-        }))
+            await websocket.send_text(json.dumps({
+                'type': 'opportunities',
+                'data': formatted_opportunities
+            }))
+
+        except Exception as e:
+            logger.error(f"❌ Erro ao enviar atualizações: {e}")
+            await websocket.send_text(json.dumps({
+                'type': 'error',
+                'message': 'Erro ao atualizar oportunidades'
+            }))
+
+    def _calculate_liquidity_level(self, volume: float) -> str:
+        """Calcula nível de liquidez baseado no volume"""
+        if volume >= 100000:  # Volume em USDT
+            return "Alta"
+        elif volume >= 50000:
+            return "Média"
+        return "Baixa"
+
+    def _calculate_risk_level(self, profit: float, volume: float) -> str:
+        """Calcula nível de risco baseado no profit e volume"""
+        if profit > 1.0 and volume > 100000:
+            return "Baixo"
+        elif profit > 0.5 and volume > 50000:
+            return "Médio"
+        return "Alto"
 
     async def _send_top_pairs_update(self, websocket: WebSocket):
         """Envia atualização dos top pares com métricas detalhadas"""
@@ -459,6 +718,53 @@ class WebDashboard:
             logger.error(f"❌ Erro ao finalizar WebDashboard: {e}")
             import traceback
             logger.error(f"Detalhes: {traceback.format_exc()}")
+
+    def _log_metrics(self):
+        """Registra métricas de performance periodicamente"""
+        try:
+            avg_latency = sum(self._broadcast_metrics['latency']) / len(self._broadcast_metrics['latency']) if self._broadcast_metrics['latency'] else 0
+            
+            metrics = {
+                'broadcast': {
+                    'avg_latency_ms': round(avg_latency * 1000, 2),
+                    'errors_count': self._broadcast_metrics['errors'],
+                    'messages_sent': self._broadcast_metrics['messages_sent']
+                },
+                'websocket': {
+                    'active_connections': len(self.manager.active_connections),
+                    'total_messages': self.manager.connection_stats['messages_sent'],
+                    'total_errors': self.manager.connection_stats['errors']
+                },
+                'cache': {
+                    'health': self._calculate_cache_health(),
+                    'size': len(getattr(self.bot_core, 'price_cache', {}))
+                }
+            }
+            
+            debug_logger.info(f"Performance metrics: {json.dumps(metrics, indent=2)}")
+            
+            # Alerta sobre problemas potenciais
+            if avg_latency > 1.0:  # Latência média > 1s
+                error_logger.warning(f"Alta latência média no broadcast: {avg_latency:.2f}s")
+            
+            if self._broadcast_metrics['errors'] > 0:
+                error_logger.warning(f"Erros acumulados no broadcast: {self._broadcast_metrics['errors']}")
+            
+            # Reseta contadores
+            self._broadcast_metrics['errors'] = 0
+            self._broadcast_metrics['messages_sent'] = 0
+            
+            self.dashboard_logger.log_performance(metrics)
+            
+        except Exception as e:
+            logger.error(f"Erro ao registrar métricas: {e}")
+            self.dashboard_logger.log_error('metrics_logging_failed', str(e))
+
+    def _calculate_avg_latency(self) -> float:
+        """Calcula latência média do broadcast"""
+        if not self._broadcast_metrics['latency']:
+            return 0.0
+        return sum(self._broadcast_metrics['latency']) / len(self._broadcast_metrics['latency']) * 1000  # em ms
 
     def setup_routes(self):
         @self.app.get("/", response_class=HTMLResponse)
@@ -627,34 +933,11 @@ class WebDashboard:
                     'timestamp': opportunity.get('timestamp', datetime.now().isoformat())
                 }
                 
-            except HTTPException:
-                raise
+            except HTTPException as he:
+                raise he
             except Exception as e:
                 logger.error(f"Erro ao analisar rota: {e}")
                 raise HTTPException(status_code=500, detail=str(e))
-                
-    def _calculate_volatility_risk(self, opportunity: Dict) -> str:
-        """Calcula risco de volatilidade baseado no histórico"""
-        profit = float(opportunity.get('profit', 0))
-        volume = float(opportunity.get('a_volume', 0))
-        
-        if profit > 1.5 and volume > 0.1:
-            return 'low'
-        elif profit > 0.8 and volume > 0.05:
-            return 'medium'
-        else:
-            return 'high'
-            
-    def _calculate_liquidity_risk(self, opportunity: Dict) -> str:
-        """Calcula risco de liquidez baseado no volume"""
-        volume = float(opportunity.get('a_volume', 0))
-        
-        if volume > 0.5:  # Volume maior que 0.5 BTC
-            return 'low'
-        elif volume > 0.1:  # Volume maior que 0.1 BTC
-            return 'medium'
-        else:
-            return 'high'
 
 # Exporta apenas a classe WebDashboard
 __all__ = ['WebDashboard']

@@ -1,6 +1,8 @@
 import themeManager from './themes.js';
 import opportunitiesManager from './opportunities.js';
 import pairsMonitor from './pairs-monitor.js';
+import wsManager from './websocket-manager.js';
+import arbitrageTable from './arbitrage-table.js';
 
 class SystemInitializer {
     constructor() {
@@ -25,6 +27,9 @@ class SystemInitializer {
         
         // Configura handlers de erro
         this.setupErrorHandlers();
+
+        // Inicializa notificações
+        notificationManager.initialize();
     }
 
     async setupWebSocket() {
@@ -66,12 +71,13 @@ class SystemInitializer {
             switch (data.type) {
                 case 'opportunity':
                     opportunitiesManager.updateOpportunities(data.data);
+                    this.updateSystemMetrics(data.status.performance);
                     break;
                 case 'system_status':
                     this.updateSystemStatus(data.data);
                     break;
-                case 'top_pairs_update':
-                    pairsMonitor.updatePairsData(data.data.pairs);
+                case 'pair_monitor_update':
+                    realtimeMonitor.handleWebSocketMessage(data);
                     break;
             }
         } catch (e) {
@@ -96,53 +102,99 @@ class SystemInitializer {
     }
 
     updateSystemStatus(status) {
-        // Atualiza elementos de status do sistema
-        const elements = {
-            'latency': `${status.performance?.avg_latency?.toFixed(2) || 0} ms`,
-            'volume-24h': `${status.performance?.volume_24h?.toFixed(8) || 0} BTC`,
-            'pairs-count': status.active_streams || 0,
-            'avg-profit': `${status.performance?.avg_profit?.toFixed(2) || 0}%`
-        };
-        
-        Object.entries(elements).forEach(([id, value]) => {
-            const element = document.getElementById(id);
-            if (element) element.textContent = value;
-        });
+        const uptimeElement = document.getElementById('uptime');
+        if (uptimeElement) {
+            uptimeElement.textContent = status.uptime;
+        }
+
+        const tradesElement = document.getElementById('trades-executed');
+        if (tradesElement) {
+            tradesElement.textContent = status.trades_executed;
+        }
+
+        const oppsFoundElement = document.getElementById('opportunities-found');
+        if (oppsFoundElement) {
+            oppsFoundElement.textContent = status.opportunities_found;
+        }
+    }
+
+    updateSystemMetrics(metrics) {
+        document.getElementById('total-profit-24h').textContent = `$${metrics.total_profit_24h.toLocaleString('pt-BR')}`;
+        document.getElementById('success-rate').textContent = `${metrics.success_rate}%`;
+        document.getElementById('average-slippage').textContent = `${metrics.avg_slippage}%`;
+        document.getElementById('active-routes').textContent = metrics.active_routes;
     }
 
     async tryReconnect() {
         if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-            console.error('Número máximo de tentativas de reconexão atingido');
+            notificationManager.error('Falha na conexão após várias tentativas');
             return;
         }
 
         this.reconnectAttempts++;
-        console.log(`Tentativa de reconexão ${this.reconnectAttempts}...`);
-        
-        await new Promise(resolve => setTimeout(resolve, 1000 * this.reconnectAttempts));
+        await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, this.reconnectAttempts)));
         await this.setupWebSocket();
     }
 
     setupThemeObservers() {
-        themeManager.addObserver((theme) => {
-            console.log(`Tema alterado para: ${theme}`);
+        // Observa mudanças no tema do sistema
+        const darkModeMediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+        darkModeMediaQuery.addListener((e) => {
+            if (e.matches) {
+                document.documentElement.classList.add('dark');
+            } else {
+                document.documentElement.classList.remove('dark');
+            }
         });
     }
 
     setupErrorHandlers() {
         window.onerror = (msg, url, line, col, error) => {
-            console.error('Erro global:', { msg, url, line, col, error });
+            notificationManager.error(`Erro: ${msg}`);
+            console.error('Erro detectado:', { msg, url, line, col, error });
             return false;
         };
 
         window.onunhandledrejection = (event) => {
-            console.error('Promise rejeitada não tratada:', event.reason);
+            notificationManager.error(`Erro assíncrono: ${event.reason}`);
+            console.error('Rejeição não tratada:', event.reason);
         };
     }
 }
 
-// Inicializa sistema
-const systemInitializer = new SystemInitializer();
-systemInitializer.initialize().catch(console.error);
+// Inicializa o sistema
+const initializer = new SystemInitializer();
+document.addEventListener('DOMContentLoaded', () => {
+    initializer.initialize();
 
-export default systemInitializer;
+    // Limpa dados antigos
+    const tables = ['arbitrage-pairs-table', 'recent-operations'];
+    tables.forEach(id => {
+        const table = document.getElementById(id);
+        if (table) table.innerHTML = '';
+    });
+
+    // Reseta métricas
+    const metrics = {
+        'total-profit-24h': '$0.00',
+        'success-rate': '0.0%',
+        'average-slippage': '0.00%',
+        'active-routes': '0',
+        'routes-badge': '0 Rotas Ativas'
+    };
+
+    Object.entries(metrics).forEach(([id, value]) => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = value;
+    });
+
+    // Inicia conexão WebSocket
+    wsManager.subscribe('opportunity', (data) => {
+        opportunitiesManager.updateOpportunities(data);
+        arbitrageTable.updateOpportunities(data.data);
+    });
+
+    wsManager.connect();
+});
+
+export default initializer;

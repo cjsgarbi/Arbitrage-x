@@ -21,6 +21,11 @@
     --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
     --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
     --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+
+    /* Cores de indicadores */
+    --profit-high: #10b981;
+    --profit-medium: #f59e0b;
+    --profit-low: #ef4444;
 }
 
 /* Tema escuro */
@@ -36,6 +41,14 @@
     --highlight-blue: #60a5fa;
     --highlight-yellow: #fbbf24;
     --highlight-red: #f87171;
+}
+
+/* Dark mode */
+.dark {
+    --bg-primary: #111827;
+    --bg-secondary: #1f2937;
+    --text-primary: #f9fafb;
+    --text-secondary: #9ca3af;
 }
 
 /* Estilos base */
@@ -484,6 +497,15 @@ body {
 .arbitrage-table {
     @apply w-full;
     font-variant-numeric: tabular-nums;
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+}
+
+.arbitrage-table th,
+.arbitrage-table td {
+    padding: 0.75rem 1rem;
+    white-space: nowrap;
 }
 
 /* Animação para valores em atualização */
@@ -572,3 +594,18 @@ body {
         display: none;
     }
 }
+
+/* Classes de liquidez */
+.liquidity-high { @apply bg-green-100 text-green-800 dark:bg-green-700 dark:text-green-100; }
+.liquidity-medium { @apply bg-yellow-100 text-yellow-800 dark:bg-yellow-700 dark:text-yellow-100; }
+.liquidity-low { @apply bg-red-100 text-red-800 dark:bg-red-700 dark:text-red-100; }
+
+/* Classes de risco */
+.risk-low { @apply bg-green-100 text-green-800 dark:bg-green-700 dark:text-green-100; }
+.risk-medium { @apply bg-yellow-100 text-yellow-800 dark:bg-yellow-700 dark:text-yellow-100; }
+.risk-high { @apply bg-red-100 text-red-800 dark:bg-red-700 dark:text-red-100; }
+
+/* Classes de volatilidade */
+.volatility-low { @apply bg-green-100 text-green-800 dark:bg-green-700 dark:text-green-100; }
+.volatility-medium { @apply bg-yellow-100 text-yellow-800 dark:bg-yellow-700 dark:text-yellow-100; }
+.volatility-high { @apply bg-red-100 text-red-800 dark:bg-red-700 dark:text-red-100; }

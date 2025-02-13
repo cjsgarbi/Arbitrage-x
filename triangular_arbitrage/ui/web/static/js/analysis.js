@@ -173,8 +173,8 @@ class OpportunityAnalyzer {
     }
 
     startMonitoring(data) {
+        window.realtimeMonitor.startMonitoring(data.route);
         notificationManager.info(`Iniciando monitoramento da rota ${data.steps[0].from} → ${data.steps[data.steps.length-1].to}`);
-        // TODO: Implementar lógica de monitoramento
     }
 
     showError(message) {

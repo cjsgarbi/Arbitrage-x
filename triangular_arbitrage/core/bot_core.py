@@ -280,6 +280,52 @@ class BotCore:
         except Exception as e:
             self.logger.error(f"❌ Erro no processamento da mensagem: {e}")
 
+    async def _process_price_update(self, symbol: str, data: Dict):
+        """Processa atualização de preço recebida"""
+        try:
+            current_time = time.time()
+            
+            # Valida dados recebidos
+            if not isinstance(data, dict):
+                self.logger.warning(f"❌ Dados inválidos recebidos para {symbol}")
+                return
+
+            # Extrai dados relevantes
+            price_data = {
+                'ask': float(data.get('askPrice', 0)),
+                'bid': float(data.get('bidPrice', 0)),
+                'volume': float(data.get('volume', 0)),
+                'timestamp': current_time,
+                'latency': (current_time - float(data.get('time', current_time))/1000) * 1000  # em ms
+            }
+
+            # Valida preços
+            if price_data['ask'] <= 0 and price_data['bid'] <= 0:
+                self.logger.warning(f"⚠️ Preços inválidos para {symbol}: ask={price_data['ask']}, bid={price_data['bid']}")
+                return
+
+            # Atualiza cache de preços
+            async with self._price_cache_lock:
+                self.price_cache[symbol] = price_data
+                
+            # Log de debug
+            self.logger.debug(
+                f"💹 Preço atualizado - {symbol} | "
+                f"Ask: {price_data['ask']:.8f} | "
+                f"Bid: {price_data['bid']:.8f} | "
+                f"Vol: {price_data['volume']:.2f} | "
+                f"Lat: {price_data['latency']:.2f}ms"
+            )
+
+            # Dispara detecção de oportunidades se tiver dados suficientes
+            if len(self.price_cache) >= 3:  # Mínimo 3 pares para triangular
+                await self._detect_arbitrage_opportunities()
+                
+        except Exception as e:
+            self.logger.error(f"❌ Erro ao processar preço de {symbol}: {e}")
+            import traceback
+            self.logger.error(f"Detalhes: {traceback.format_exc()}")
+
     async def start(self):
         """Inicia o bot com recuperação automática"""
         retry_count = 0
@@ -362,30 +408,45 @@ class BotCore:
     def _calculate_triangular_profit(self, pair1, pair2, pair3, price1_data, price2_data, price3_data):
         """Calcula o profit da arbitragem triangular"""
         try:
-            # Determina direção da ordem para cada par
-            direction1 = 'ask' if pair1.endswith(pair2.split(pair1[-3:])[0]) else 'bid'
-            direction2 = 'ask' if pair2.endswith(pair3.split(pair2[-3:])[0]) else 'bid'
-            direction3 = 'ask' if pair3.endswith(pair1.split(pair3[-3:])[0]) else 'bid'
+            # Valida dados de preço
+            required_fields = ['ask', 'bid']
+            valid_data = all(
+                isinstance(d, dict) and all(field in d for field in required_fields)
+                for d in [price1_data, price2_data, price3_data]
+            )
             
-            # Calcula taxas
-            fee = 0.00075  # 0.075% por trade
-            
-            # Calcula preços considerando direção
-            price1_val = float(price1_data[direction1])
-            price2_val = float(price2_data[direction2])
-            price3_val = float(price3_data[direction3])
-            
-            # Calcula profit considerando taxas
-            profit = (
-                (1 / price1_val * (1 - fee)) *
-                (1 / price2_val * (1 - fee)) *
-                (price3_val * (1 - fee))
-            ) - 1
-            
-            return profit * 100  # Retorna em porcentagem
-            
-        except Exception as e:
-            self.logger.error(f"❌ Erro no cálculo de profit: {e}")
+            if not valid_data:
+                return None
+
+            # Obtém preços como float
+            price1_ask = float(price1_data['ask'])
+            price1_bid = float(price1_data['bid'])
+            price2_ask = float(price2_data['ask'])
+            price2_bid = float(price2_data['bid'])
+            price3_ask = float(price3_data['ask'])
+            price3_bid = float(price3_data['bid'])
+
+            if not all(x > 0 for x in [price1_ask, price1_bid, price2_ask, price2_bid, price3_ask, price3_bid]):
+                return None
+
+            # Calcula as duas direções possíveis
+            # Direção 1: Compra par1, vende par2, vende par3
+            profit1 = ((1 / price1_ask) * price2_bid * price3_bid) - 1
+
+            # Direção 2: Compra par3, compra par2, vende par1
+            profit2 = ((1 / price3_ask) * (1 / price2_ask) * price1_bid) - 1
+
+            # Considera taxas de trading (0.1% por operação)
+            fee = 0.001  # 0.1%
+            profit1 = profit1 - (fee * 3)  # 3 operações
+            profit2 = profit2 - (fee * 3)
+
+            # Retorna o maior profit em porcentagem
+            best_profit = max(profit1, profit2) * 100
+            return best_profit if best_profit > 0 else None
+
+        except (ValueError, TypeError, ZeroDivisionError) as e:
+            self.logger.debug(f"Erro no cálculo de profit: {e}")
             return None
 
     async def _detect_arbitrage_opportunities(self):
@@ -402,11 +463,15 @@ class BotCore:
             # Usa apenas pares com dados recentes (últimos 5 segundos)
             recent_pairs = {
                 symbol: data for symbol, data in price_cache.items()
-                if time.time() - data['timestamp'] < 5
+                if isinstance(data, dict) and 'timestamp' in data and time.time() - data['timestamp'] < 5
             }
-            
-            # Base pairs para triangular arbitrage
-            base_pairs = ['BTC', 'ETH', 'BNB', 'USDT']
+
+            if not recent_pairs:
+                self.logger.debug("Aguardando dados de preços...")
+                return
+
+            # Base pairs para triangular arbitrage (expandido para mais possibilidades)
+            base_pairs = ['BTC', 'ETH', 'BNB', 'USDT', 'BUSD', 'USDC']
             
             for base in base_pairs:
                 base_markets = [p for p in recent_pairs if base in p]
@@ -417,57 +482,82 @@ class BotCore:
                             continue
                             
                         # Encontra o terceiro par
-                        asset1 = pair1.replace(base, '')
-                        asset2 = pair2.replace(base, '')
-                        
-                        pair3 = f"{asset1}{asset2}"
-                        if pair3 not in recent_pairs:
-                            pair3 = f"{asset2}{asset1}"
-                            if pair3 not in recent_pairs:
+                        try:
+                            asset1 = pair1.replace(base, '')
+                            asset2 = pair2.replace(base, '')
+
+                            # Garante que estamos usando os pares corretos
+                            if not asset1 or not asset2:
                                 continue
-                        
-                        # Calcula profit apenas se todos os pares têm latência aceitável
-                        max_latency = max(
-                            recent_pairs[pair1]['latency'],
-                            recent_pairs[pair2]['latency'],
-                            recent_pairs[pair3]['latency']
-                        )
-                        
-                        if max_latency > 500:  # Ignora se latência > 500ms
-                            continue
-                        
-                        # Calcula profit
-                        profit = self._calculate_triangular_profit(
-                            pair1, pair2, pair3,
-                            recent_pairs[pair1],
-                            recent_pairs[pair2],
-                            recent_pairs[pair3]
-                        )
-                        
-                        if profit and profit > 0.1:
-                            volume = self._calculate_max_volume(
+                            
+                            pair3 = f"{asset1}{asset2}"
+                            if pair3 not in recent_pairs:
+                                pair3 = f"{asset2}{asset1}"
+                                if pair3 not in recent_pairs:
+                                    continue
+                            
+                            # Calcula profit apenas se todos os pares têm dados válidos
+                            price1_data = recent_pairs[pair1]
+                            price2_data = recent_pairs[pair2]
+                            price3_data = recent_pairs[pair3]
+
+                            # Validação dos dados
+                            required_fields = ['ask', 'bid']
+                            if not all(isinstance(d, dict) and all(field in d for field in required_fields)
+                                     for d in [price1_data, price2_data, price3_data]):
+                                continue
+
+                            # Calcula o profit
+                            profit = self._calculate_triangular_profit(
                                 pair1, pair2, pair3,
-                                recent_pairs[pair1],
-                                recent_pairs[pair2],
-                                recent_pairs[pair3]
+                                price1_data,
+                                price2_data,
+                                price3_data
                             )
                             
-                            opportunity = {
-                                'a_step_from': base,
-                                'a_step_to': asset1,
-                                'b_step_from': asset1,
-                                'b_step_to': asset2,
-                                'c_step_from': asset2,
-                                'c_step_to': base,
-                                'profit': round(profit, 3),
-                                'a_volume': volume,
-                                'timestamp': current_time.isoformat(),
-                                'rate': 1 + (profit / 100),
-                                'score': 90 if profit > 1.5 else 70 if profit > 0.5 else 50,
-                                'latency': round(max_latency, 2),
-                                'status': 'active'
-                            }
-                            opportunities.append(opportunity)
+                            if profit and profit > 0.1:  # Apenas oportunidades com lucro > 0.1%
+                                volume = self._calculate_max_volume(
+                                    pair1, pair2, pair3,
+                                    price1_data,
+                                    price2_data,
+                                    price3_data
+                                )
+                                
+                                max_latency = max(
+                                    price1_data.get('latency', 0),
+                                    price2_data.get('latency', 0),
+                                    price3_data.get('latency', 0)
+                                )
+                                
+                                opportunity = {
+                                    'id': str(len(opportunities) + 1),
+                                    'a_step_from': base,
+                                    'a_step_to': asset1,
+                                    'b_step_from': asset1,
+                                    'b_step_to': asset2,
+                                    'c_step_from': asset2,
+                                    'c_step_to': base,
+                                    'profit': round(profit, 3),
+                                    'a_volume': volume,
+                                    'timestamp': current_time.isoformat(),
+                                    'rate': 1 + (profit / 100),
+                                    'latency': round(max_latency, 2),
+                                    'status': 'active',
+                                    'a_rate': float(price1_data['ask']),
+                                    'b_rate': float(price2_data['ask']),
+                                    'c_rate': float(price3_data['ask'])
+                                }
+                                opportunities.append(opportunity)
+                                
+                                # Log da oportunidade encontrada
+                                self.logger.info(
+                                    f"💰 Nova oportunidade: {base}→{asset1}→{asset2} | "
+                                    f"Profit: {profit:.2f}% | Volume: {volume:.8f} BTC"
+                                )
+
+                        except Exception as e:
+                            self.logger.debug(f"Erro ao processar par: {e}")
+                            continue
             
             # Atualiza apenas se encontrou oportunidades
             if opportunities:
@@ -478,31 +568,46 @@ class BotCore:
                 )[:10]  # Mantém apenas as 10 melhores
                 self.last_update = current_time
                 
+                # Log de performance
+                process_time = time.time() - start_time
+                self.processing_times.append(process_time)
+                self.logger.debug(f"⚡ Processamento em {process_time*1000:.2f}ms | {len(opportunities)} oportunidades")
+                
         except Exception as e:
             self.logger.error(f"❌ Erro na detecção de arbitragem: {e}")
+            import traceback
+            self.logger.error(f"Detalhes: {traceback.format_exc()}")
             return
 
-    def _calculate_max_volume(self, pair1, pair2, pair3, price1, price2, price3):
+    def _calculate_max_volume(self, pair1, pair2, pair3, price1_data, price2_data, price3_data):
         """Calcula volume máximo possível considerando liquidez"""
         try:
-            # Calcula volume baseado na liquidez disponível
-            volumes = [
-                min(price1['bidVolume'], price1['askVolume']),
-                min(price2['bidVolume'], price2['askVolume']),
-                min(price3['bidVolume'], price3['askVolume'])
-            ]
-            
-            # Aplica limite conservador
-            max_volume = min(volumes) * 0.8  # 80% do volume disponível
-            
-            # Limita baseado na configuração
-            config_limit = TRADING_CONFIG['FUNDS_ALLOCATION'].get('BTC', 0.01)
-            
-            return round(min(max_volume, config_limit), 6)
-            
-        except Exception as e:
-            self.logger.error(f"❌ Erro no cálculo de volume: {e}")
-            return 0.001
+            # Obtém volumes dos books de ordem
+            volume1 = float(price1_data.get('volume', 0))
+            volume2 = float(price2_data.get('volume', 0))
+            volume3 = float(price3_data.get('volume', 0))
+
+            # Converte volumes para BTC
+            if not pair1.startswith('BTC'):
+                volume1 = volume1 * float(price1_data['ask'])
+            if not pair2.startswith('BTC'):
+                volume2 = volume2 * float(price2_data['ask'])
+            if not pair3.startswith('BTC'):
+                volume3 = volume3 * float(price3_data['ask'])
+
+            # Pega o menor volume da rota
+            max_volume = min(volume1, volume2, volume3)
+
+            # Limita volume máximo por trade
+            max_trade_volume = 0.1  # 0.1 BTC
+            max_volume = min(max_volume, max_trade_volume)
+
+            # Arredonda para 8 casas decimais
+            return round(max_volume, 8)
+
+        except (ValueError, TypeError, ZeroDivisionError) as e:
+            self.logger.debug(f"Erro no cálculo de volume: {e}")
+            return 0.001  # Volume mínimo default
 
     async def stop(self):
         """Para o bot e realiza backup final"""

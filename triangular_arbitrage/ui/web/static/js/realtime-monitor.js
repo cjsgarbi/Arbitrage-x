@@ -2,6 +2,9 @@ class RealtimeMonitor {
     constructor() {
         this.activePairs = new Set();
         this.updateCallbacks = new Map();
+        this.ws = null;
+        this.reconnectAttempts = 0;
+        this.maxReconnectAttempts = 5;
     }
 
     startMonitoring(pair, onUpdate) {
@@ -14,6 +17,17 @@ class RealtimeMonitor {
 
         // Cria elemento flutuante para monitoramento
         this.createMonitorElement(pair);
+
+        // Inicia conexão WebSocket se não existir
+        if (!this.ws) {
+            this.connectWebSocket();
+        } else {
+            // Envia mensagem para subscrever ao par
+            this.ws.send(JSON.stringify({
+                type: 'monitor_pair',
+                pair: pair
+            }));
+        }
     }
 
     createMonitorElement(pair) {
@@ -26,13 +40,11 @@ class RealtimeMonitor {
         }
 
         const monitorHtml = `
-            <div id="${monitorId}" class="fixed bottom-4 left-4 bg-white dark:bg-gray-800 rounded-lg shadow-lg p-4 w-80 monitor-card">
-                <div class="flex justify-between items-center mb-3">
-                    <h3 class="text-sm font-medium text-gray-900 dark:text-white">
-                        Monitorando ${pair}
-                    </h3>
-                    <button class="text-gray-400 hover:text-gray-500" onclick="window.realtimeMonitor.stopMonitoring('${pair}')">
-                        <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <div id="${monitorId}" class="fixed bottom-4 right-4 w-80 bg-white dark:bg-gray-800 rounded-lg shadow-lg p-4 cursor-move">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-sm font-medium text-gray-900 dark:text-white">Monitor: ${pair}</h3>
+                    <button onclick="window.realtimeMonitor.stopMonitoring('${pair}')" class="text-gray-400 hover:text-gray-500">
+                        <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
                         </svg>
                     </button>
@@ -44,17 +56,16 @@ class RealtimeMonitor {
                     </div>
                     <div class="flex justify-between items-center">
                         <span class="text-xs text-gray-500 dark:text-gray-400">Volume:</span>
-                        <span id="${monitorId}-volume" class="text-sm font-medium">--</span>
+                        <span id="${monitorId}-volume" class="text-sm text-gray-900 dark:text-white">--</span>
                     </div>
                     <div class="flex justify-between items-center">
                         <span class="text-xs text-gray-500 dark:text-gray-400">Oportunidades:</span>
-                        <span id="${monitorId}-opportunities" class="text-sm font-medium">--</span>
+                        <span id="${monitorId}-opportunities" class="text-sm text-gray-900 dark:text-white">--</span>
                     </div>
-                    <div class="mt-2">
-                        <div class="text-xs text-gray-500 dark:text-gray-400 mb-1">Rotas Ativas:</div>
-                        <div id="${monitorId}-routes" class="text-xs space-y-1">
-                        </div>
-                    </div>
+                </div>
+                <div class="mt-4">
+                    <div class="text-xs text-gray-500 dark:text-gray-400 mb-2">Rotas Ativas:</div>
+                    <div id="${monitorId}-routes" class="space-y-1 text-sm"></div>
                 </div>
                 <div class="mt-3 text-right">
                     <span id="${monitorId}-timestamp" class="text-xs text-gray-400"></span>

@@ -1,67 +1,46 @@
 class NotificationManager {
     constructor() {
+        this.container = document.createElement('div');
+        this.container.className = 'fixed top-4 right-4 z-50 space-y-2';
+        document.body.appendChild(this.container);
         this.queue = [];
-        this.isProcessing = false;
-        this.notificationDuration = 5000; // 5 segundos
-        this.containerTemplate = `
-            <div id="notification-container" class="fixed bottom-4 right-4 z-50 space-y-2"></div>
-        `;
-        this.initialize();
+        this.processing = false;
     }
 
     initialize() {
-        // Cria container de notificações se não existir
-        if (!document.getElementById('notification-container')) {
-            document.body.insertAdjacentHTML('beforeend', this.containerTemplate);
-        }
+        // Processa fila de notificações a cada 100ms
+        setInterval(() => this.processQueue(), 100);
     }
 
     show(message, type = 'info') {
         this.queue.push({ message, type });
-        if (!this.isProcessing) {
-            this.processQueue();
-        }
     }
 
     async processQueue() {
-        if (this.queue.length === 0) {
-            this.isProcessing = false;
-            return;
-        }
-
-        this.isProcessing = true;
+        if (this.processing || this.queue.length === 0) return;
+        
+        this.processing = true;
         const { message, type } = this.queue.shift();
-
+        
         const notification = this.createNotificationElement(message, type);
-        const container = document.getElementById('notification-container');
-        container.appendChild(notification);
+        this.container.appendChild(notification);
 
-        // Anima entrada
+        // Inicia animação de entrada
         await new Promise(resolve => setTimeout(resolve, 100));
         notification.classList.remove('opacity-0', 'translate-x-full');
 
-        // Remove após duração
-        await new Promise(resolve => setTimeout(resolve, this.notificationDuration));
-        
-        // Anima saída
-        notification.classList.add('opacity-0', 'translate-x-full');
-        await new Promise(resolve => setTimeout(resolve, 300));
-        notification.remove();
+        // Remove após 5 segundos
+        setTimeout(() => {
+            notification.classList.add('opacity-0', 'translate-x-full');
+            setTimeout(() => notification.remove(), 300);
+        }, 5000);
 
-        // Processa próxima notificação
-        this.processQueue();
+        this.processing = false;
     }
 
     createNotificationElement(message, type) {
-        const colors = {
-            success: 'bg-green-500 dark:bg-green-600',
-            error: 'bg-red-500 dark:bg-red-600',
-            info: 'bg-blue-500 dark:bg-blue-600',
-            warning: 'bg-yellow-500 dark:bg-yellow-600'
-        };
-
         const div = document.createElement('div');
-        div.className = `flex items-center p-4 mb-4 w-full max-w-xs rounded-lg shadow text-white ${colors[type]} transition-all duration-300 transform opacity-0 translate-x-full`;
+        div.className = `flex items-center p-4 mb-4 w-full max-w-xs rounded-lg shadow text-white ${this.getColorClass(type)} transition-all duration-300 transform opacity-0 translate-x-full`;
         div.innerHTML = `
             <div class="inline-flex flex-shrink-0 justify-center items-center w-8 h-8 rounded-lg bg-white/25">
                 ${this.getIconForType(type)}
@@ -69,11 +48,23 @@ class NotificationManager {
             <div class="ml-3 text-sm font-normal">${message}</div>
             <button type="button" class="ml-auto -mx-1.5 -my-1.5 rounded-lg focus:ring-2 focus:ring-gray-300 p-1.5 inline-flex h-8 w-8 text-white hover:text-gray-200 hover:bg-white/25" onclick="this.parentElement.remove()">
                 <span class="sr-only">Fechar</span>
-                <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"></path></svg>
+                <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                    <path d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"></path>
+                </svg>
             </button>
         `;
 
         return div;
+    }
+
+    getColorClass(type) {
+        const colors = {
+            success: 'bg-green-500 dark:bg-green-600',
+            error: 'bg-red-500 dark:bg-red-600',
+            info: 'bg-blue-500 dark:bg-blue-600',
+            warning: 'bg-yellow-500 dark:bg-yellow-600'
+        };
+        return colors[type] || colors.info;
     }
 
     getIconForType(type) {
