@@ -2,6 +2,8 @@ import logging
 import logging.handlers
 import os
 import sys
+import socket
+import uuid
 from pathlib import Path
 from datetime import datetime, timedelta
 import json
@@ -23,15 +25,33 @@ class LogPath:
         path.mkdir(exist_ok=True)
 
 class JsonFormatter(logging.Formatter):
-    """Formatador personalizado para logs em JSON"""
+    """Formatador personalizado para logs em JSON com mais contexto"""
+    def __init__(self):
+        super().__init__()
+        self.hostname = socket.gethostname()
+        self.process = os.getpid()
+        self.correlation_id = str(uuid.uuid4())
+        self.recent_logs = {}  # Para rastrear logs recentes e evitar duplicações
+        
     def format(self, record):
+        
         log_obj = {
             'timestamp': datetime.fromtimestamp(record.created).isoformat(),
             'level': record.levelname,
             'module': record.module,
             'function': record.funcName,
             'line': record.lineno,
-            'message': record.getMessage()
+            'message': record.getMessage(),
+            'hostname': self.hostname,
+            'process': self.process,
+            'thread': record.threadName,
+            'correlation_id': self.correlation_id,
+            'context': {
+                'environment': os.getenv('ENVIRONMENT', 'development'),
+                'instance_id': os.getenv('INSTANCE_ID', 'default'),
+                'app_version': os.getenv('APP_VERSION', '1.0.0')
+            },
+            'data': record.__dict__.get('data', {}) # inclui dados adicionais
         }
         
         # Adiciona exceção se existir
@@ -46,6 +66,7 @@ class JsonFormatter(logging.Formatter):
         if hasattr(record, 'data'):
             if 'data' in record.__dict__:
                 log_obj['data'] = record.__dict__.get('data', None)
+                
             
         return json.dumps(log_obj)
 
@@ -64,7 +85,7 @@ def check_disk_space(path: Path) -> Dict[str, Any]:
         logging.error(f"Erro ao verificar espaço em disco: {e}")
         return {'error': str(e)}
 
-def cleanup_old_logs(log_path: Path, max_age_days: int = 1) -> None:
+def cleanup_old_logs(log_path: Path, max_age_days: int = 30) -> None:
     """Remove logs mais antigos que max_age_days"""
     try:
         cutoff = datetime.now() - timedelta(days=max_age_days)
@@ -77,6 +98,10 @@ def cleanup_old_logs(log_path: Path, max_age_days: int = 1) -> None:
 
 def setup_logging(name: str = "arbitrage", log_dir: Optional[Union[str, Path]] = None) -> Dict[str, logging.Logger]:
     """Configura sistema de logging detalhado com validação e formatação JSON"""
+    
+    # Verifica se a inicialização constante do seletor de eventos é esperada
+    # (Isso pode ser removido ou ajustado conforme necessário)
+    logging.getLogger('selector_events').setLevel(logging.INFO)
     
     # Configura diretório de logs
     log_dir = Path(log_dir) if log_dir else Path("logs")
