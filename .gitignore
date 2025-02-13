@@ -148,6 +148,7 @@ dist/
 downloads/
 eggs/
 .eggs/
+lib/
 lib64/
 parts/
 sdist/
@@ -161,29 +162,90 @@ wheels/
 venv/
 ENV/
 env/
+.env
+.venv
+env.bak/
+venv.bak/
 
-# IDE
+# IDE e Editores
 .idea/
 .vscode/
 *.swp
 *.swo
+*~
 
-# Logs
-logs/
+# Logs e Dados
 *.log
+logs/
+debug_logs/
+*.db
+data/
+*.sqlite3
+connections.log
+error.log
+events.log
+dashboard_events.json
+trades.json
 
-# Ambiente
-.env
-.env.local
-.env.*.local
+# Arquivos de Configuração Sensíveis
+config.ini
+secrets.yaml
+*.pem
+*.key
+*.crt
 
-# Ruby
-ruby_executor/.bundle/
-ruby_executor/vendor/
-*.gem
-.ruby-version
-.ruby-gemset
+# Arquivos de Cache
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+cover/
 
-# Outros
+# Arquivos do Sistema
 .DS_Store
 Thumbs.db
+desktop.ini
+
+# Arquivos de Backup
+*.bak
+*.backup
+*~
+*.swp
+*.swo
+
+# Arquivos Temporários
+tmp/
+temp/
+*.tmp
+*.temp
+
+# Arquivos de Dependências
+node_modules/
+package-lock.json
+yarn.lock
+
+# Arquivos de Produção
+/production.env
+/staging.env
+/development.env
+
+# Binários e Compilados
+*.pyc
+*.pyo
+*.pyd
+*.so
+*.dll
+*.dylib
+
+# Diretórios específicos do projeto
+ruby_executor/tmp/
+data/backups/
