@@ -1,13 +1,18 @@
-pytest
-pytest-pep8
-pytest-cov
-pytest-asyncio
+# Testing
+pytest>=8.0.0
+pytest-pep8>=1.0.6
+pytest-cov>=4.1.0
+pytest-asyncio>=0.23.5
+coverage>=7.4.1
 
-coverage
+# Development Tools
+twine>=4.0.2
+pip>=24.0
+setuptools>=69.0.3
+wheel>=0.42.0
 
-twine
-pip
-setuptools
-wheel
-
-pylint
+# Code Quality
+pylint>=3.0.3
+black>=24.1.1
+flake8>=7.0.0
+mypy>=1.8.0
