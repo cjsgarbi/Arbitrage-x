@@ -130,21 +130,31 @@ class BackupManager:
         try:
             backup_path = self.backup_dir / 'db' / f"arbitrage_{timestamp}.db.gz"
             
+            # Garante que o diretório pai existe
+            backup_path.parent.mkdir(parents=True, exist_ok=True)
+            
             async with aiosqlite.connect(self.db_path) as db:
                 # Backup em memória primeiro
-                query = "SELECT sql FROM sqlite_master WHERE type='table'"
-                tables = await db.execute_fetchall(query)
+                # Lista tabelas
+                async with db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'") as cursor:
+                    tables = [row[0] for row in await cursor.fetchall()]
                 
                 schema = []
                 data = []
                 
-                for table in tables:
-                    schema.append(table[0])
-                    rows = await db.execute_fetchall(f"SELECT * FROM {table[0]}")
-                    data.append({
-                        'table': table[0],
-                        'rows': rows
-                    })
+                for table_name in tables:
+                    # Pega o schema real da tabela
+                    async with db.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name=?", (table_name,)) as cursor:
+                        create_sql = await cursor.fetchone()
+                        if create_sql and create_sql[0]:
+                            schema.append(create_sql[0])
+                            # Pega dados de forma segura
+                            async with db.execute(f"SELECT * FROM [{table_name}]") as cursor:
+                                rows = await cursor.fetchall()
+                                data.append({
+                                    'table': table_name,
+                                    'rows': [list(row) for row in rows]  # Converte para lista
+                                })
                 
                 # Comprime e salva
                 with gzip.open(backup_path, 'wt') as f:

@@ -22,8 +22,12 @@ class OpportunitiesManager {
         }
     }
 
-    updateOpportunities(opportunities) {
+    updateOpportunities(data) {
         if (!this.table || !this.autoRefresh) return;
+        if (!data || !data.data) return;
+
+        const opportunities = data.data;
+        const metadata = data.metadata || {};
 
         // Limpa tabela atual
         this.table.innerHTML = '';
@@ -43,9 +47,9 @@ class OpportunitiesManager {
                               profit > 0.5 ? 'text-yellow-600 dark:text-yellow-400' : 
                               'text-gray-600 dark:text-gray-400';
             
-            const statusClass = opp.status === 'excellent' ? 
+            const statusClass = opp.status === 'active' ? 
                 'bg-green-100 text-green-800 dark:bg-green-700 dark:text-green-100' :
-                'bg-yellow-100 text-yellow-800 dark:bg-yellow-700 dark:text-yellow-100';
+                'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-100';
 
             row.innerHTML = `
                 <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">
@@ -55,7 +59,7 @@ class OpportunitiesManager {
                     ${profit.toFixed(4)}%
                 </td>
                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-300">
-                    ${parseFloat(opp.volume).toFixed(8)}
+                    ${parseFloat(opp.volume || 0).toFixed(8)}
                 </td>
                 <td class="px-6 py-4 whitespace-nowrap">
                     <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${statusClass}">
@@ -66,21 +70,24 @@ class OpportunitiesManager {
                     ${this.formatTimestamp(opp.timestamp)}
                 </td>
                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-300">
-                    <button onclick="window.opportunitiesManager.monitorOpportunity('${opp.route}')" 
-                            class="text-indigo-600 hover:text-indigo-900 dark:text-indigo-400 dark:hover:text-indigo-300 mr-3">
-                        Monitor
-                    </button>
-                    <button onclick="window.opportunitiesManager.analyzeOpportunity('${opp.route}')"
-                            class="text-green-600 hover:text-green-900 dark:text-green-400 dark:hover:text-green-300">
-                        Analisar
-                    </button>
+                    ${opp.status === 'active' ? `
+                        <button onclick="window.opportunitiesManager.monitorOpportunity('${opp.route}')" 
+                                class="text-indigo-600 hover:text-indigo-900 dark:text-indigo-400 dark:hover:text-indigo-300 mr-3">
+                            Monitor
+                        </button>
+                        <button onclick="window.opportunitiesManager.analyzeOpportunity('${opp.route}')"
+                                class="text-green-600 hover:text-green-900 dark:text-green-400 dark:hover:text-green-300">
+                            Analisar
+                        </button>
+                    ` : 'Monitorando'}
                 </td>
             `;
             
             this.table.appendChild(row);
         });
 
-        this.updateCount(opportunities.length);
+        // Atualiza contadores com metadata
+        this.updateCount(metadata.total_pairs || opportunities.length);
         this.updateLastUpdate();
     }
 
@@ -95,7 +102,7 @@ class OpportunitiesManager {
 
     updateCount(count) {
         if (this.countElement) {
-            this.countElement.textContent = `${count} ativa${count !== 1 ? 's' : ''}`;
+            this.countElement.textContent = `${count} pares monitorados`;
         }
     }
 
@@ -116,7 +123,7 @@ class OpportunitiesManager {
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                         </svg>
                         <p class="text-gray-500 dark:text-gray-400">
-                            Nenhuma oportunidade encontrada no momento
+                            Nenhum par monitorado no momento
                         </p>
                     </div>
                 </td>

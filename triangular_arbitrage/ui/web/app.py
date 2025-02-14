@@ -200,19 +200,53 @@ class WebDashboard:
         self.setup_routes()
 
     async def initialize(self):
-        """Inicializa o WebDashboard"""
+        """Inicializa o WebDashboard garantindo que todos os componentes estejam prontos"""
         if self._initialized:
             return
             
         try:
+            # Verifica se o bot está pronto
+            if not self.bot_core or not self.bot_core.is_connected:
+                logger.warning("Aguardando bot estar pronto...")
+                await asyncio.sleep(1)
+                
+            # Prepara estruturas de dados
+            self._broadcast_metrics = {
+                'latency': [],
+                'errors': 0,
+                'messages_sent': 0
+            }
+            
+            # Limpa tasks antigas se houver
+            for task in self._tasks:
+                if not task.done():
+                    task.cancel()
+            self._tasks.clear()
+            
             # Inicia task de broadcast em background
             self._broadcast_task = asyncio.create_task(self._broadcast_data())
             self._tasks.add(self._broadcast_task)
+            
+            # Aguarda primeira execução do broadcast
+            try:
+                await asyncio.wait_for(self._wait_first_broadcast(), timeout=5.0)
+            except asyncio.TimeoutError:
+                logger.warning("Timeout aguardando primeiro broadcast, continuando mesmo assim")
+            
             self._initialized = True
-            logger.info("✅ WebDashboard inicializado")
+            logger.info("✅ WebDashboard inicializado com sucesso")
+            
         except Exception as e:
             logger.error(f"❌ Erro ao inicializar WebDashboard: {e}")
+            import traceback
+            logger.error(f"Detalhes: {traceback.format_exc()}")
+            self._initialized = False
             raise
+
+    async def _wait_first_broadcast(self):
+        """Aguarda primeira execução do broadcast"""
+        while not self._broadcast_metrics['messages_sent']:
+            await asyncio.sleep(0.1)
 
     async def _broadcast_data(self):
         """Broadcast data para clientes WebSocket com otimizações"""
@@ -222,6 +256,12 @@ class WebDashboard:
 
         while not self._cleanup_event.is_set():
             try:
+                # Verifica estado do bot
+                if not self.bot_core or not self.bot_core.is_connected:
+                    logger.warning("Bot desconectado, aguardando reconexão...")
+                    await asyncio.sleep(1)
+                    continue
+
                 start_time = time.time()
                 current_time = time.time()
                 current_datetime = datetime.now()
@@ -230,17 +270,28 @@ class WebDashboard:
                     await asyncio.sleep(min_interval)
                     continue
 
-                debug_logger.debug(f"Verificando oportunidades. Conexões: {len(self.manager.active_connections)}")
+                debug_logger.debug(f"Atualizando {len(self.manager.active_connections)} conexões ativas")
                 
-                opportunities = getattr(self.bot_core, 'opportunities', [])
-                if not isinstance(opportunities, list):
-                    opportunities = []
+                # Tenta obter oportunidades com retry
+                retry_count = 0
+                max_retries = 3
+                opportunities = []
                 
-                opportunities = getattr(self.bot_core, 'opportunities', [])
-                if not isinstance(opportunities, list):
-                    opportunities = []
+                while retry_count < max_retries:
+                    try:
+                        opportunities = getattr(self.bot_core, 'opportunities', [])
+                        if isinstance(opportunities, list):
+                            break
+                        opportunities = []
+                    except Exception as e:
+                        retry_count += 1
+                        if retry_count == max_retries:
+                            logger.error(f"Falha ao obter oportunidades após {max_retries} tentativas: {e}")
+                        else:
+                            await asyncio.sleep(0.1)
+                            continue
                 
-                debug_logger.debug(f"Oportunidades encontradas: {len(opportunities)}")
+                debug_logger.debug(f"Processando {len(opportunities)} oportunidades")
                 
                 # Registra métricas de performance
                 broadcast_time = time.time() - start_time
@@ -452,6 +503,30 @@ class WebDashboard:
         except (ValueError, TypeError):
             return 'high'
 
+    def _calculate_liquidity_level(self, volume: float) -> str:
+        """Calcula nível de liquidez baseado no volume"""
+        try:
+            if volume >= 1.0:  # Volume maior que 1 BTC
+                return "Alta"
+            elif volume >= 0.1:  # Volume maior que 0.1 BTC
+                return "Média"
+            return "Baixa"
+        except (ValueError, TypeError):
+            return "Baixa"
+
+    def _calculate_risk_level(self, profit: float, volume: float) -> str:
+        """Calcula nível de risco baseado no profit e volume"""
+        try:
+            # Considera tanto profit positivo quanto negativo
+            abs_profit = abs(profit)
+            if abs_profit > 1.0 and volume > 1.0:
+                return "Baixo"
+            elif abs_profit > 0.5 and volume > 0.1:
+                return "Médio"
+            return "Alto"
+        except (ValueError, TypeError):
+            return "Alto"
+
     async def _handle_websocket(self, websocket: WebSocket):
         """Gerencia conexão WebSocket individual"""
         client_id = f"client_{id(websocket)}"
@@ -556,38 +631,85 @@ class WebDashboard:
             }))
 
     async def _send_opportunities_update(self, websocket: WebSocket):
-        """Envia atualização de oportunidades"""
+        """Envia atualização de oportunidades incluindo todos os dados reais"""
         try:
+            # Obtém todos os pares monitorados
+            all_pairs = list(self.bot_core.symbol_pairs)[:10]  # Limita a 10 grupos
             opportunities = getattr(self.bot_core, 'opportunities', [])
             
             formatted_opportunities = []
-            for opp in opportunities:
+            
+            # Processa cada par dos 10 selecionados
+            for pair in all_pairs:
+                # Encontra oportunidades relacionadas ao par
+                pair_opportunities = [opp for opp in opportunities 
+                                   if pair in [opp.get('a_step_from'), opp.get('b_step_from'), opp.get('c_step_from')]]
+                
                 try:
-                    profit = float(opp.get('profit', 0))
-                    volume = float(opp.get('a_volume', 0))
+                    # Obtém dados reais do par
+                    latest_price = self.bot_core.price_cache.get(pair, {}).get('price', 0)
+                    latest_volume = self.bot_core.price_cache.get(pair, {}).get('volume', 0)
+                    latest_timestamp = self.bot_core.price_cache.get(pair, {}).get('timestamp', time.time())
                     
-                    formatted_opp = {
-                        'id': opp.get('id', str(time.time())),
-                        'route': f"{opp.get('a_step_from')}→{opp.get('b_step_from')}→{opp.get('c_step_from')}",
-                        'profit': profit,
-                        'slippage': float(opp.get('slippage', 0.005)),
-                        'executionTime': float(opp.get('latency', 0)) / 1000,
-                        'liquidity': self._calculate_liquidity_level(volume),
-                        'risk': self._calculate_risk_level(profit, volume),
-                        'spread': float(opp.get('spread', 0)),
-                        'volatility': self._calculate_volatility_risk(opp),
-                        'confidence': self._calculate_confidence(profit),
-                        'timestamp': opp.get('timestamp', datetime.now().isoformat())
+                    # Calcula dados reais mesmo sem oportunidades ativas
+                    base_opp = {
+                        'id': f"{pair}_{str(time.time())}",
+                        'route': f"{pair}→{pair}→{pair}",
+                        'profit': 0.0,
+                        'volume': latest_volume,
+                        'price': latest_price,
+                        'slippage': 0.005,
+                        'executionTime': 0,
+                        'liquidity': self._calculate_liquidity_level(latest_volume),
+                        'risk': self._calculate_risk_level(0, latest_volume),
+                        'spread': 0.0,
+                        'volatility': self._calculate_volatility_risk({'a_step_from': pair, 'volume': latest_volume}),
+                        'confidence': 50,
+                        'timestamp': datetime.fromtimestamp(latest_timestamp).isoformat(),
+                        'status': 'monitored'
                     }
-                    formatted_opportunities.append(formatted_opp)
                     
+                    # Se houver oportunidades ativas, atualiza com dados reais
+                    if pair_opportunities:
+                        for opp in pair_opportunities:
+                            profit = float(opp.get('profit', 0))
+                            volume = float(opp.get('a_volume', 0))
+                            
+                            formatted_opp = {
+                                'id': opp.get('id', str(time.time())),
+                                'route': f"{opp.get('a_step_from')}→{opp.get('b_step_from')}→{opp.get('c_step_from')}",
+                                'profit': profit,  # Mantém valor real mesmo se negativo
+                                'volume': volume,
+                                'price': float(opp.get('a_rate', 0)),
+                                'slippage': float(opp.get('slippage', 0.005)),
+                                'executionTime': float(opp.get('latency', 0)) / 1000,
+                                'liquidity': self._calculate_liquidity_level(volume),
+                                'risk': self._calculate_risk_level(profit, volume),
+                                'spread': float(opp.get('spread', 0)),
+                                'volatility': self._calculate_volatility_risk(opp),
+                                'confidence': self._calculate_confidence(profit),
+                                'timestamp': opp.get('timestamp', datetime.now().isoformat()),
+                                'status': 'active'
+                            }
+                            formatted_opportunities.append(formatted_opp)
+                    else:
+                        # Adiciona o par mesmo sem oportunidades ativas
+                        formatted_opportunities.append(base_opp)
+                        
                 except (ValueError, TypeError) as e:
-                    logger.error(f"❌ Erro ao formatar oportunidade: {e}")
+                    logger.error(f"❌ Erro ao processar par {pair}: {e}")
                     continue
 
+            # Envia dados com metadata adicional
             await websocket.send_text(json.dumps({
                 'type': 'opportunities',
-                'data': formatted_opportunities
+                'data': formatted_opportunities,
+                'metadata': {
+                    'total_pairs': len(all_pairs),
+                    'active_pairs': len([opp for opp in formatted_opportunities if opp['status'] == 'active']),
+                    'monitored_pairs': len(formatted_opportunities),
+                    'update_timestamp': datetime.now().isoformat()
+                }
             }))
 
         except Exception as e:
@@ -596,22 +718,6 @@ class WebDashboard:
                 'type': 'error',
                 'message': 'Erro ao atualizar oportunidades'
             }))
-
-    def _calculate_liquidity_level(self, volume: float) -> str:
-        """Calcula nível de liquidez baseado no volume"""
-        if volume >= 100000:  # Volume em USDT
-            return "Alta"
-        elif volume >= 50000:
-            return "Média"
-        return "Baixa"
-
-    def _calculate_risk_level(self, profit: float, volume: float) -> str:
-        """Calcula nível de risco baseado no profit e volume"""
-        if profit > 1.0 and volume > 100000:
-            return "Baixo"
-        elif profit > 0.5 and volume > 50000:
-            return "Médio"
-        return "Alto"
 
     async def _send_top_pairs_update(self, websocket: WebSocket):
         """Envia atualização dos top pares com métricas detalhadas"""

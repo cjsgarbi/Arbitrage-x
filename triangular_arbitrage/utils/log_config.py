@@ -99,9 +99,13 @@ def cleanup_old_logs(log_path: Path, max_age_days: int = 30) -> None:
 def setup_logging(name: str = "arbitrage", log_dir: Optional[Union[str, Path]] = None) -> Dict[str, logging.Logger]:
     """Configura sistema de logging detalhado com validação e formatação JSON"""
     
-    # Verifica se a inicialização constante do seletor de eventos é esperada
-    # (Isso pode ser removido ou ajustado conforme necessário)
-    logging.getLogger('selector_events').setLevel(logging.INFO)
+    # Configura níveis específicos de log para melhor diagnóstico
+    logging.getLogger('asyncio').setLevel(logging.INFO)
+    logging.getLogger('urllib3').setLevel(logging.WARNING)
+    logging.getLogger('websockets').setLevel(logging.INFO)  # Important para debugar conexões
+    logging.getLogger('selector_events').setLevel(logging.WARNING)
+    logging.getLogger('aiobinance').setLevel(logging.INFO)  # Important para debugar API
+    logging.getLogger('websocket').setLevel(logging.INFO)   # Important para debugar sockets
     
     # Configura diretório de logs
     log_dir = Path(log_dir) if log_dir else Path("logs")
@@ -136,7 +140,7 @@ def setup_logging(name: str = "arbitrage", log_dir: Optional[Union[str, Path]] =
     error_handler.setFormatter(json_formatter)
     error_handler.setLevel(logging.ERROR)
     
-    # Handler para debug
+    # Handler para debug (importante para diagnosticar travamentos)
     debug_log_path = Path(log_dir).joinpath(f"debug_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log")
     debug_handler = logging.handlers.RotatingFileHandler(
         str(debug_log_path),
@@ -145,9 +149,9 @@ def setup_logging(name: str = "arbitrage", log_dir: Optional[Union[str, Path]] =
         encoding='utf-8'
     )
     debug_handler.setFormatter(json_formatter)
-    debug_handler.setLevel(logging.DEBUG)
+    debug_handler.setLevel(logging.INFO)  # Mantém nível INFO para capturar eventos importantes
     
-    # Handler para trades
+    # Handler para trades (importante para monitoramento)
     trade_log_path = Path(log_dir).joinpath("trades.json")
     trade_handler = logging.handlers.RotatingFileHandler(
         str(trade_log_path),
@@ -167,12 +171,12 @@ def setup_logging(name: str = "arbitrage", log_dir: Optional[Union[str, Path]] =
     
     # Configura logger raiz
     root_logger = logging.getLogger()
-    root_logger.setLevel(logging.DEBUG)
+    root_logger.setLevel(logging.INFO)  # Reduz verbosidade usando apenas logs importantes
     
     # Remove handlers antigos
     root_logger.handlers.clear()
     
-    # Adiciona novos handlers
+    # Adiciona handlers essenciais
     root_logger.addHandler(main_handler)
     root_logger.addHandler(error_handler)
     root_logger.addHandler(debug_handler)
