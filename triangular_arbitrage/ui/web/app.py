@@ -11,6 +11,7 @@ from pathlib import Path
 import sys
 import time
 import statistics
+import traceback
 
 # Ajuste dos imports relativos para absolutos
 from triangular_arbitrage.utils.log_config import setup_logging, JsonFormatter
@@ -27,8 +28,11 @@ class ConnectionManager:
     def __init__(self):
         self.active_connections: List[WebSocket] = []
         self._lock = asyncio.Lock()
-        self._last_cleanup = datetime.now()
-        self._connection_tasks = set()
+        self._cleanup_event = asyncio.Event()
+        self._heartbeat_interval = 5  # Reduzido para 5 segundos
+        self._connection_timeouts = {}
+        self._last_activity = {}
+        self._ping_tasks = {}
         self.connection_stats = {
             'total_connections': 0,
             'active_connections': 0,
@@ -36,123 +40,152 @@ class ConnectionManager:
             'errors': 0,
             'reconnections': 0
         }
-        self.performance_metrics = {
-            'avg_latency': 0,
-            'message_count': 0,
-            'last_latencies': [],
-            'last_error': None,
-            'error_count': 0
-        }
-        
-        # Inicia task de manutenção
-        self._maintenance_task = asyncio.create_task(self._connection_maintenance())
 
     async def connect(self, websocket: WebSocket):
-        await websocket.accept()
-        async with self._lock:
-            self.active_connections.append(websocket)
-            self.connection_stats['total_connections'] += 1
-            self.connection_stats['active_connections'] = len(self.active_connections)
-            logger.info(f"Nova conexão WebSocket. Total ativo: {len(self.active_connections)}")
+        """Gerencia conexão de um novo WebSocket"""
+        try:
+            await websocket.accept()
+            async with self._lock:
+                self.active_connections.append(websocket)
+                self.connection_stats['total_connections'] += 1
+                self.connection_stats['active_connections'] = len(self.active_connections)
+                self._last_activity[id(websocket)] = time.time()
+                
+                # Inicia monitoramento de heartbeat para esta conexão
+                self._ping_tasks[id(websocket)] = asyncio.create_task(
+                    self._monitor_connection(websocket)
+                )
+                
+            logger.info(f"Nova conexão WebSocket estabelecida. Total ativo: {len(self.active_connections)}")
+            
+            # Envia configuração inicial
+            await websocket.send_text(json.dumps({
+                "type": "connection_config",
+                "data": {
+                    "heartbeat_interval": self._heartbeat_interval,
+                    "reconnect_delay": 1000,
+                    "connection_id": id(websocket)
+                }
+            }))
+            
+        except Exception as e:
+            logger.error(f"Erro ao estabelecer conexão WebSocket: {e}")
+            if websocket in self.active_connections:
+                await self.disconnect(websocket)
 
     async def disconnect(self, websocket: WebSocket):
+        """Desconecta um WebSocket de forma segura"""
         async with self._lock:
             if websocket in self.active_connections:
                 self.active_connections.remove(websocket)
                 self.connection_stats['active_connections'] = len(self.active_connections)
+                
+                # Limpa dados de monitoramento
+                conn_id = id(websocket)
+                self._last_activity.pop(conn_id, None)
+                
+                # Cancela task de ping
+                if conn_id in self._ping_tasks:
+                    self._ping_tasks[conn_id].cancel()
+                    self._ping_tasks.pop(conn_id)
+                
+                try:
+                    await websocket.close()
+                except Exception:
+                    pass
+                
                 logger.info(f"Conexão WebSocket fechada. Total ativo: {len(self.active_connections)}")
 
     async def broadcast(self, message: dict):
-        async with self._lock:
-            start_time = time.time()
-            disconnected = []
+        """Envia mensagem para todos os clientes conectados"""
+        if not self.active_connections:
+            return
             
+        async with self._lock:
+            disconnected = []
             for connection in self.active_connections:
                 try:
                     await connection.send_text(json.dumps(message))
                     self.connection_stats['messages_sent'] += 1
+                    self._last_activity[id(connection)] = time.time()
                 except Exception as e:
                     logger.error(f"Erro ao enviar mensagem: {e}")
                     self.connection_stats['errors'] += 1
                     disconnected.append(connection)
-                    self.performance_metrics['error_count'] += 1
-                    self.performance_metrics['last_error'] = str(e)
-            
+
             # Remove conexões com erro
             for conn in disconnected:
                 await self.disconnect(conn)
-            
-            # Atualiza métricas de performance
-            latency = (time.time() - start_time) * 1000
-            self.update_performance_metrics(latency)
 
-    async def _connection_maintenance(self):
-        """Mantém conexões saudáveis e recupera de falhas"""
-        while True:
+    async def _monitor_connection(self, websocket: WebSocket):
+        """Monitora uma conexão específica e mantém heartbeat"""
+        conn_id = id(websocket)
+        ping_interval = self._heartbeat_interval / 2  # Envia ping na metade do intervalo
+        
+        while not self._cleanup_event.is_set() and websocket in self.active_connections:
             try:
-                # Limpa conexões inativas
-                inactive = []
-                async with self._lock:
-                    for conn in self.active_connections:
-                        try:
-                            await conn.send_text(json.dumps({"type": "ping"}))
-                        except Exception as e:
-                            logger.debug(f"Conexão inativa detectada: {str(e)}")
-                            inactive.append(conn)
-                            self.connection_stats['errors'] += 1
-                            self.performance_metrics['error_count'] += 1
-                            self.performance_metrics['last_error'] = str(e)
-                    
-                    # Remove conexões inativas
-                    for conn in inactive:
-                        await self.disconnect(conn)
-                        self.connection_stats['reconnections'] += 1
-                    
-                    if inactive:
-                        logger.info(f"Manutenção: {len(inactive)} conexões removidas")
+                await asyncio.sleep(ping_interval)
                 
-                # Verifica saúde das tasks
-                dead_tasks = {task for task in self._connection_tasks if task.done()}
-                self._connection_tasks -= dead_tasks
-                
-                for task in dead_tasks:
+                # Verifica última atividade
+                if time.time() - self._last_activity.get(conn_id, 0) > self._heartbeat_interval:
+                    # Envia ping
+                    await websocket.send_text(json.dumps({"type": "ping", "timestamp": time.time()}))
+                    
+                    # Aguarda pong com timeout
                     try:
-                        exc = task.exception()
-                        if exc:
-                            logger.error(f"Task morta com erro: {exc}")
-                    except asyncio.CancelledError:
-                        pass
-                
-                await asyncio.sleep(5)  # Verifica a cada 5 segundos
+                        response = await asyncio.wait_for(
+                            websocket.receive_text(),
+                            timeout=3.0
+                        )
+                        if json.loads(response).get("type") == "pong":
+                            self._last_activity[conn_id] = time.time()
+                            continue
+                    except asyncio.TimeoutError:
+                        logger.warning(f"Timeout no heartbeat da conexão {conn_id}")
+                        break
+                    except Exception as e:
+                        logger.error(f"Erro no heartbeat: {e}")
+                        break
                 
             except Exception as e:
-                logger.error(f"Erro na manutenção de conexões: {str(e)}")
-                import traceback
-                logger.error(f"Detalhes: {traceback.format_exc()}")
-                await asyncio.sleep(1)
-
-    def get_stats(self):
-        """Retorna estatísticas das conexões"""
-        return self.connection_stats
-
-    def update_performance_metrics(self, latency):
-        """Atualiza métricas de performance"""
-        self.performance_metrics['message_count'] += 1
-        self.performance_metrics['last_latencies'].append(latency)
+                logger.error(f"Erro no monitoramento da conexão {conn_id}: {e}")
+                break
         
-        # Mantém apenas as últimas 100 medições
-        if len(self.performance_metrics['last_latencies']) > 100:
-            self.performance_metrics['last_latencies'].pop(0)
-        
-        # Calcula média móvel
-        self.performance_metrics['avg_latency'] = sum(self.performance_metrics['last_latencies']) / len(self.performance_metrics['last_latencies'])
+        # Se saiu do loop, desconecta
+        if websocket in self.active_connections:
+            await self.disconnect(websocket)
 
-    def get_performance_metrics(self):
-        """Retorna métricas de performance"""
+    async def cleanup(self):
+        """Limpa todas as conexões"""
+        self._cleanup_event.set()
+        async with self._lock:
+            for connection in self.active_connections[:]:
+                await self.disconnect(connection)
+            self.active_connections.clear()
+            self._last_activity.clear()
+            
+            for timeout in self._connection_timeouts.values():
+                timeout.cancel()
+            self._connection_timeouts.clear()
+
+    async def get_stats(self):
+        """Retorna estatísticas da conexão"""
         return {
-            **self.performance_metrics,
-            'current_connections': len(self.active_connections),
-            'stats': self.connection_stats
+            'active_connections': len(self.active_connections),
+            'total_connections': self.connection_stats['total_connections'],
+            'messages_sent': self.connection_stats['messages_sent'],
+            'errors': self.connection_stats['errors'],
+            'reconnections': self.connection_stats['reconnections']
+        }
+        
+    async def get_performance_metrics(self):
+        """Retorna métricas de performance das conexões"""
+        return {
+            'connection_stats': self.connection_stats,
+            'active_connections': len(self.active_connections),
+            'messages_sent': self.connection_stats['messages_sent'],
+            'errors': self.connection_stats['errors'],
+            'reconnections': self.connection_stats['reconnections']
         }
 
 class WebDashboard:
@@ -160,7 +193,8 @@ class WebDashboard:
         self.app = FastAPI(
             title="Arbitrage Dashboard",
             docs_url="/docs",
-            redoc_url="/redoc"
+            redoc_url="/redoc",
+            on_shutdown=[self.cleanup]  # Registra cleanup para ser chamado no shutdown
         )
         self.bot_core = bot_core
         self.manager = ConnectionManager()
@@ -168,6 +202,7 @@ class WebDashboard:
         self._initialized = False
         self._cleanup_event = asyncio.Event()
         self._tasks = set()
+        self._shutdown_started = False
         
         # Configuração de logging
         self.logger = logger
@@ -248,175 +283,76 @@ class WebDashboard:
         while not self._broadcast_metrics['messages_sent']:
             await asyncio.sleep(0.1)
 
-    async def _broadcast_data(self):
-        """Broadcast data para clientes WebSocket com otimizações"""
-        last_opportunities = None
-        last_broadcast = 0
-        min_interval = 0.1  # 100ms mínimo entre broadcasts
+    def _adjust_broadcast_interval(self, latency: float, current_interval: float) -> float:
+        """Ajusta intervalo de broadcast baseado na latência"""
+        target_latency = 50  # 50ms alvo
+        min_interval = 0.05  # 50ms mínimo
+        max_interval = 0.2   # 200ms máximo
+        
+        if latency > 100:  # Latência muito alta
+            return min(max_interval, current_interval * 1.2)
+        elif latency < target_latency:  # Latência boa
+            return max(min_interval, current_interval * 0.9)
+        return current_interval
 
+    async def _broadcast_data(self):
+        """Broadcast data para clientes WebSocket com otimizações e ajuste dinâmico"""
+        broadcast_interval = 0.1  # 100ms inicial
+        
         while not self._cleanup_event.is_set():
             try:
-                # Verifica estado do bot
-                if not self.bot_core or not self.bot_core.is_connected:
-                    logger.warning("Bot desconectado, aguardando reconexão...")
-                    await asyncio.sleep(1)
+                if not self.manager.active_connections:
+                    self.logger.debug("Sem conexões ativas para broadcast")
+                    await asyncio.sleep(broadcast_interval)
                     continue
 
                 start_time = time.time()
-                current_time = time.time()
-                current_datetime = datetime.now()
                 
-                if not self.manager.active_connections:
-                    await asyncio.sleep(min_interval)
+                # Verifica se bot_core existe e está conectado
+                if not self.bot_core:
+                    self.logger.error("bot_core não está disponível")
+                    await asyncio.sleep(1)
+                    continue
+                    
+                if not self.bot_core.is_connected:
+                    self.logger.warning("bot_core não está conectado")
+                    await asyncio.sleep(1)
                     continue
 
-                debug_logger.debug(f"Atualizando {len(self.manager.active_connections)} conexões ativas")
+                # Obtém e valida oportunidades
+                opportunities = getattr(self.bot_core, 'opportunities', [])
+                self.logger.info(f"Oportunidades detectadas: {len(opportunities)}")
                 
-                # Tenta obter oportunidades com retry
-                retry_count = 0
-                max_retries = 3
-                opportunities = []
+                if not opportunities:
+                    self.logger.debug("Nenhuma oportunidade disponível para broadcast")
                 
-                while retry_count < max_retries:
-                    try:
-                        opportunities = getattr(self.bot_core, 'opportunities', [])
-                        if isinstance(opportunities, list):
-                            break
-                        opportunities = []
-                    except Exception as e:
-                        retry_count += 1
-                        if retry_count == max_retries:
-                            logger.error(f"Falha ao obter oportunidades após {max_retries} tentativas: {e}")
-                        else:
-                            await asyncio.sleep(0.1)
-                            continue
+                # Log detalhado das primeiras 5 oportunidades
+                for opp in opportunities[:5]:
+                    self.logger.debug(f"Oportunidade: {opp.get('a_step_from')}→{opp.get('b_step_from')}→{opp.get('c_step_from')} | Profit: {opp.get('profit')}%")
                 
-                debug_logger.debug(f"Processando {len(opportunities)} oportunidades")
-                
-                # Registra métricas de performance
-                broadcast_time = time.time() - start_time
-                self._broadcast_metrics['latency'].append(broadcast_time)
-                if len(self._broadcast_metrics['latency']) > 100:
-                    self._broadcast_metrics['latency'].pop(0)
-                
-                # Alerta sobre latência alta
-                if broadcast_time > 0.5:  # 500ms threshold
-                    logger.warning(f"High broadcast latency: {broadcast_time:.2f}s")
-
-                # Log de métricas periódico
-                if (datetime.now() - self._last_metrics_update).seconds >= 60:
-                    self._log_metrics()
-                    self._last_metrics_update = datetime.now()
-
-                # Calcula métricas das últimas 24h
-                yesterday = current_datetime - timedelta(days=1)
-                opportunities_24h = []
-                
-                for opp in opportunities:
-                    try:
-                        opp_timestamp = opp.get('timestamp')
-                        if opp_timestamp:
-                            if isinstance(opp_timestamp, str):
-                                opp_time = datetime.fromisoformat(opp_timestamp)
-                            else:
-                                opp_time = datetime.fromtimestamp(float(opp_timestamp))
-                            
-                            if opp_time > yesterday:
-                                opportunities_24h.append(opp)
-                    except (ValueError, TypeError) as e:
-                        logger.error(f"❌ Erro ao processar timestamp: {e}")
-                        continue
-                
-                volume_24h = sum(float(opp.get('a_volume', 0)) for opp in opportunities_24h)
-                profit_24h = sum(float(opp.get('profit', 0)) for opp in opportunities_24h)
-                
-                if (opportunities != last_opportunities and 
-                    current_time - last_broadcast >= min_interval):
-                    
-                    # Formata oportunidades para o frontend
-                    formatted_opportunities = []
-                    for opp in opportunities:
-                        try:
-                            profit = float(opp.get('profit', 0))
-                            volume = float(opp.get('a_volume', 0))
-                            
-                            # Garante que sempre teremos um timestamp válido
-                            try:
-                                timestamp = opp.get('timestamp')
-                                if timestamp:
-                                    if isinstance(timestamp, str):
-                                        _ = datetime.fromisoformat(timestamp)  # Valida o formato
-                                    else:
-                                        timestamp = datetime.fromtimestamp(float(timestamp)).isoformat()
-                                else:
-                                    timestamp = current_datetime.isoformat()
-                            except (ValueError, TypeError):
-                                timestamp = current_datetime.isoformat()
-                            
-                            formatted_opp = {
-                                'id': opp.get('id', str(current_time)),
-                                'route': f"{opp.get('a_step_from')}→{opp.get('b_step_from')}→{opp.get('c_step_from')}",
-                                'profit': profit,
-                                'volume': volume,
-                                'latency': float(opp.get('latency', 0)),
-                                'risk': {
-                                    'volatility': self._calculate_volatility_risk(opp),
-                                    'liquidity': self._calculate_liquidity_risk(opp)
-                                },
-                                'confidence': self._calculate_confidence(profit),
-                                'timestamp': timestamp
-                            }
-                            formatted_opportunities.append(formatted_opp)
-                            logger.debug(f"📈 Oportunidade formatada: {formatted_opp['route']} | Profit: {profit:.2f}%")
-                        except (ValueError, TypeError) as e:
-                            logger.error(f"❌ Erro ao formatar oportunidade: {e}")
-                            continue
-
-                    message = {
-                        'type': 'opportunity',
-                        'data': formatted_opportunities,
-                        'metrics': {
-                            'volume_24h': round(volume_24h, 8),
-                            'profit_24h': round(profit_24h, 4),
-                            'active_routes': len(formatted_opportunities),
-                            'success_rate': self.bot_core.get_performance_metrics().get('success_rate', 0),
-                            'avg_slippage': self.bot_core.get_performance_metrics().get('avg_slippage', 0),
-                        },
-                        'timestamp': current_datetime.isoformat()
+                # Prepara dados para envio
+                message = {
+                    'type': 'opportunities',
+                    'data': opportunities,
+                    'metadata': {
+                        'total_pairs': len(getattr(self.bot_core, 'symbol_pairs', set())),
+                        'active_pairs': len([opp for opp in opportunities if opp.get('status') == 'active']),
+                        'update_timestamp': datetime.now().isoformat()
                     }
-                    
-                    logger.debug(f"📤 Enviando {len(formatted_opportunities)} oportunidades via WebSocket")
-                    await self.manager.broadcast(message)
-                    last_opportunities = opportunities
-                    last_broadcast = current_time
-                    logger.debug(f"✅ Broadcast concluído em {(time.time() - current_time)*1000:.2f}ms")
+                }
+
+                # Broadcast para todos os clientes
+                await self.manager.broadcast(message)
                 
+                # Log de performance
+                broadcast_time = (time.time() - start_time) * 1000
+                self.logger.debug(f"Broadcast completado em {broadcast_time:.2f}ms")
                 
+                await asyncio.sleep(broadcast_interval)
                 
-                # Log de métricas de performance
-                broadcast_time = time.time() - start_time
-                self.dashboard_logger.log_performance({
-                    'latency': broadcast_time * 1000,
-                    'opportunities_count': len(opportunities),
-                    'connections_count': len(self.manager.active_connections),
-                    'cache': getattr(self.bot_core, 'price_cache', {})
-                })
-                
-                await asyncio.sleep(min_interval)
-                
-            except asyncio.CancelledError:
-                break
             except Exception as e:
-                self._broadcast_metrics['errors'] += 1
-                logger.error(f"Broadcast error: {e}", extra={
-                    'component': 'broadcast',
-                    'active_connections': len(self.manager.active_connections),
-                    'opportunities_count': len(opportunities) if 'opportunities' in locals() else 0
-                })
-                self.dashboard_logger.log_error('broadcast_failed', str(e), {
-                    'active_connections': len(self.manager.active_connections),
-                    'last_broadcast': last_broadcast if 'last_broadcast' in locals() else 0
-                })
+                self.logger.error(f"Erro no broadcast: {e}")
+                self.logger.error(f"Detalhes: {traceback.format_exc()}")
                 await asyncio.sleep(1)
 
     def _calculate_status(self, profit: float) -> str:
@@ -530,71 +466,48 @@ class WebDashboard:
     async def _handle_websocket(self, websocket: WebSocket):
         """Gerencia conexão WebSocket individual"""
         client_id = f"client_{id(websocket)}"
-        self.dashboard_logger.log_connection(client_id, 'connected', {
-            'remote': str(websocket.client),
-            'time': datetime.now().isoformat()
-        })
         
-        await self.manager.connect(websocket)
         try:
+            await self.manager.connect(websocket)
+            self.logger.info(f"Nova conexão WebSocket estabelecida: {client_id}")
+            
+            # Envia estado inicial
+            await self._send_full_update(websocket)
+            
             while not self._cleanup_event.is_set():
                 try:
                     data = await websocket.receive_text()
                     message = json.loads(data)
+                    self.logger.debug(f"Mensagem recebida de {client_id}: {message}")
                     
-                    # Log da mensagem recebida
-                    self.dashboard_logger.log_websocket_event('message_received', client_id, {
-                        'message_type': message.get('type'),
-                        'timestamp': datetime.now().isoformat()
-                    })
-
                     if message.get('type') == 'ping':
                         await websocket.send_text(json.dumps({
-                            "type": "pong",
-                            "timestamp": datetime.now().isoformat()
+                            'type': 'pong',
+                            'timestamp': datetime.now().isoformat()
                         }))
-
-                    elif message.get('type') == 'monitor_pair':
-                        # Monitora par específico em tempo real
-                        await self._monitor_pair(websocket, message.get('pair'))
-
-                    elif message.get('type') == 'subscribe':
-                        # Permite que o cliente se inscreva em diferentes tipos de updates
-                        topics = message.get('topics', [])
-                        for topic in topics:
-                            if topic == 'opportunities':
-                                await self._send_opportunities_update(websocket)
-                            elif topic == 'top_pairs':
-                                await self._send_top_pairs_update(websocket)
-                            elif topic == 'system_status':
-                                await self._send_system_status(websocket)
-
-                    elif message.get('type') == 'request_update':
-                        # Envia todas as atualizações disponíveis
-                        await self._send_full_update(websocket)
-
+                        continue
+                    
+                    # Processa outras mensagens normalmente
+                    await self._process_websocket_message(websocket, message)
+                    
                 except WebSocketDisconnect:
-                    self.dashboard_logger.log_connection(client_id, 'disconnected', {
-                        'reason': 'client_disconnected',
-                        'time': datetime.now().isoformat()
-                    })
-                    logger.info("Cliente WebSocket desconectado")
+                    self.logger.info(f"Cliente desconectado: {client_id}")
                     break
+                except json.JSONDecodeError:
+                    self.logger.warning(f"Mensagem inválida recebida de {client_id}")
+                    continue
                 except Exception as e:
-                    self.dashboard_logger.log_websocket_event('error', client_id, {
-                        'error': str(e),
-                        'timestamp': datetime.now().isoformat()
-                    })
-                    logger.error(f"Erro no WebSocket: {str(e)}")
+                    self.logger.error(f"Erro no processamento de mensagem WebSocket: {e}")
+                    if "Connection reset by peer" in str(e):
+                        break
                     await asyncio.sleep(1)
                     continue
-
+                    
+        except Exception as e:
+            self.logger.error(f"Erro na conexão WebSocket {client_id}: {e}")
         finally:
+            self.logger.info(f"Finalizando conexão {client_id}")
             await self.manager.disconnect(websocket)
-            self.dashboard_logger.log_connection(client_id, 'connection_closed', {
-                'reason': 'cleanup',
-                'time': datetime.now().isoformat()
-            })
 
     async def _monitor_pair(self, websocket: WebSocket, pair: str):
         """Monitora um par específico em tempo real"""
@@ -799,31 +712,63 @@ class WebDashboard:
         await self._send_opportunities_update(websocket)
         await self._send_top_pairs_update(websocket)
 
-    async def cleanup(self):
-        """Limpa recursos e fecha conexões"""
+    async def _process_websocket_message(self, websocket: WebSocket, message: dict):
+        """Processa mensagens recebidas via WebSocket"""
         try:
-            # Sinaliza para tasks pararem
+            message_type = message.get('type')
+            
+            if message_type == 'request_update':
+                await self._send_full_update(websocket)
+            elif message_type == 'monitor_pair':
+                pair = message.get('pair')
+                if pair:
+                    await self._monitor_pair(websocket, pair)
+            elif message_type == 'get_top_pairs':
+                await self._send_top_pairs_update(websocket)
+            else:
+                logger.warning(f"Tipo de mensagem desconhecido: {message_type}")
+                
+        except Exception as e:
+            logger.error(f"Erro ao processar mensagem WebSocket: {e}")
+            await websocket.send_text(json.dumps({
+                'type': 'error',
+                'message': str(e)
+            }))
+
+    async def stop(self):
+        """Para o WebDashboard de forma segura"""
+        if self._shutdown_started:
+            return
+            
+        self._shutdown_started = True
+        print("Parando WebDashboard...")
+        
+        try:
             self._cleanup_event.set()
             
-            # Cancela todas as tasks
-            for task in self._tasks:
-                if not task.done():
-                    task.cancel()
+            # Para broadcast primeiro
+            if self._broadcast_task and not self._broadcast_task.done():
+                self._broadcast_task.cancel()
+                
+            # Fecha todas as conexões WebSocket imediatamente
+            await asyncio.gather(*[
+                self.manager.disconnect(conn) 
+                for conn in self.manager.active_connections
+            ], return_exceptions=True)
             
-            # Aguarda tasks terminarem
-            if self._tasks:
-                await asyncio.gather(*self._tasks, return_exceptions=True)
+            # Limpa recursos
+            await self.manager.cleanup()
             
-            # Fecha conexões WebSocket
-            for conn in self.manager.active_connections:
-                await self.manager.disconnect(conn)
-            
-            logger.info("✅ WebDashboard finalizado com sucesso")
+            print("WebDashboard parado com sucesso")
             
         except Exception as e:
-            logger.error(f"❌ Erro ao finalizar WebDashboard: {e}")
-            import traceback
-            logger.error(f"Detalhes: {traceback.format_exc()}")
+            print(f"Erro ao parar WebDashboard: {e}")
+        finally:
+            self._shutdown_started = False
+
+    async def cleanup(self):
+        """Limpa recursos e fecha conexões"""
+        await self.stop()  # Garante que o stop seja chamado
 
     def _log_metrics(self):
         """Registra métricas de performance periodicamente"""
@@ -888,6 +833,8 @@ class WebDashboard:
             self._tasks.add(ws_task)
             try:
                 await ws_task
+            except Exception as e:
+                self.logger.error(f"Erro no WebSocket: {e}")
             finally:
                 self._tasks.remove(ws_task)
 

@@ -10,7 +10,7 @@ import uvicorn
 import logging
 from triangular_arbitrage.config import DB_CONFIG, DISPLAY_CONFIG
 from dotenv import load_dotenv
-from functools import partial
+import threading
 
 logger = logging.getLogger(__name__)
 
@@ -56,19 +56,37 @@ def handle_shutdown(bot, dashboard, loop, signal_name):
     # Agenda a finalização do bot e dashboard
     loop.create_task(cleanup(bot, dashboard))
 
+def force_exit():
+    """Força o encerramento após timeout"""
+    print("\nForçando encerramento...")
+    os._exit(1)
+
 async def cleanup(bot, dashboard):
     """Limpa recursos e finaliza componentes"""
     try:
+        print("\nIniciando limpeza...")
+        # Define um timeout de 5 segundos para cleanup
+        timer = threading.Timer(5.0, force_exit)
+        timer.start()
+
         if bot:
+            print("Parando bot...")
             await bot.stop()
         if dashboard:
+            print("Parando dashboard...")
             await dashboard.cleanup()
-        logger.info("✅ Sistema encerrado com sucesso")
+        
+        # Se chegou aqui, cancela o timer pois terminou normalmente
+        timer.cancel()
+        print("✅ Sistema encerrado com sucesso")
+        
     except Exception as cleanup_error:
-        logger.error(f"Erro ao limpar recursos: {str(cleanup_error)}")
+        print(f"Erro ao limpar recursos: {str(cleanup_error)}")
     finally:
-        # Força a parada do loop de eventos
-        asyncio.get_event_loop().stop()
+        # Força a parada do loop de eventos e sai
+        loop = asyncio.get_event_loop()
+        loop.stop()
+        os._exit(0)
 
 async def main():
     bot = None
@@ -85,7 +103,7 @@ async def main():
         if not bot or not dashboard:
             raise Exception("Falha na inicialização dos componentes")
 
-        # Configura servidor web com recuperação de erros
+        # Configura servidor web com recuperação de erros e keep-alive
         config = uvicorn.Config(
             app=dashboard.app,
             host="127.0.0.1",
@@ -93,10 +111,13 @@ async def main():
             log_level="info",
             reload=False,
             workers=1,
-            timeout_keep_alive=30,
+            timeout_keep_alive=120,  # Aumentado para 120 segundos
             loop="auto",
             lifespan="on",
-            access_log=False
+            access_log=False,
+            ws_ping_interval=20.0,  # Ping a cada 20 segundos
+            ws_ping_timeout=30.0,   # Timeout de 30 segundos
+            ws_max_size=16777216    # 16MB max message size
         )
         server = uvicorn.Server(config)
 
@@ -120,6 +141,15 @@ async def main():
                     sig,
                     partial(handle_shutdown, bot, dashboard, loop, sig.name)
                 )
+
+        # Configura tratamento de Ctrl+C mais agressivo
+        def signal_handler(signum, frame):
+            print("\nSinal de interrupção recebido. Forçando parada...")
+            asyncio.create_task(cleanup(bot, dashboard))
+        
+        # Registra handler para SIGINT (Ctrl+C)
+        signal.signal(signal.SIGINT, signal_handler)
+        signal.signal(signal.SIGTERM, signal_handler)
 
         # Inicia bot e servidor em paralelo com tratamento de erros
         try:
@@ -149,22 +179,21 @@ async def main():
                 task.cancel()
 
     except KeyboardInterrupt:
-        logger.info("Encerrando sistema por interrupção do usuário...")
+        print("\nInterrupção detectada, encerrando...")
+        await cleanup(bot, dashboard)
     except Exception as e:
         logger.error(f"❌ Erro fatal: {str(e)}")
         logger.error(f"Detalhes: {traceback.format_exc()}")
     finally:
-        # Sempre tenta limpar recursos
-        try:
-            await cleanup(bot, dashboard)
-        except Exception as cleanup_error:
-            logger.error(f"Erro durante cleanup: {cleanup_error}")
-        sys.exit(1)
+        # Garante que o processo será encerrado
+        os._exit(0)
 
 if __name__ == "__main__":
     # Configura evento loop do Windows
     if sys.platform == "win32":
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
-    
-    # Executa loop principal
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("\nEncerrando...")
+        sys.exit(0)

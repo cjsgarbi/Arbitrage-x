@@ -20,15 +20,15 @@ from ..utils.logger import Logger
 logger = logging.getLogger(__name__)
 
 class BotCore:
-    def __init__(self, db, display, config):
+    def __init__(self, db=None, display=None, config=None):
         self.db = db
         self.display = display
-        self.config = config
+        self.config = {} if config is None else config
         self.logger = logging.getLogger(__name__)
         
         # Configurações da API
-        self.api_key = config.get('BINANCE_API_KEY', '')  # Corrigido nome da chave
-        self.api_secret = config.get('BINANCE_API_SECRET', '')  # Corrigido nome da chave
+        self.api_key = self.config.get('BINANCE_API_KEY', '')
+        self.api_secret = self.config.get('BINANCE_API_SECRET', '')
         
         if not self.api_key or not self.api_secret:
             self.logger.error("❌ Credenciais da Binance não encontradas. Verifique o arquivo .env")
@@ -54,10 +54,16 @@ class BotCore:
         self.processing_times = []
         self.last_latency = 0
         self._active_tasks = set()
+        self.active_tasks = set()  # Adicionado como atributo público
         self._cleanup_event = asyncio.Event()
+        self._shutdown_event = asyncio.Event()
+        self._is_shutting_down = False
+        self._stream_buffer = asyncio.Queue(maxsize=1000)
+        self._buffer_processor_task = None
+        self._last_stream_time = time.time()
         
-        # Modo de operação (true = apenas monitoramento, false = executa ordens)
-        self.test_mode = config.get('test_mode', True)
+        # Modo de operação
+        self.test_mode = self.config.get('test_mode', True)  # Usa self.config que já foi validado
 
         # Log do modo de operação
         if self.test_mode:
@@ -219,50 +225,120 @@ class BotCore:
 
     async def _handle_batch_stream(self, symbols):
         """Gerencia um batch de streams"""
+        retry_count = 0
+        max_retries = 3
+        base_delay = 1
+
         while self.running:
             try:
                 if not self.client:
                     self.logger.error("Cliente Binance não inicializado")
                     await asyncio.sleep(5)
                     continue
-                    
+                
+                # Inicia processador de buffer se necessário
+                if not self._buffer_processor_task or self._buffer_processor_task.done():
+                    self._buffer_processor_task = asyncio.create_task(self._process_stream_buffer())
+                
                 streams = [f"{pair.lower()}@bookTicker" for pair in symbols]
-                if not self.bsm and self.client:
-                    self.bsm = BinanceSocketManager(self.client)
-                    
                 if not self.bsm:
-                    self.logger.error("Não foi possível criar BinanceSocketManager")
-                    await asyncio.sleep(5)
-                    continue
-                    
+                    self.bsm = BinanceSocketManager(self.client)
+                
                 ws = self.bsm.multiplex_socket(streams)
                 
                 try:
                     async with ws as stream:
                         self.active_streams.append(stream)
+                        self._last_stream_time = time.time()
+                        
                         while self.running:
                             try:
-                                data = await asyncio.wait_for(stream.recv(), timeout=10.0)
+                                data = await asyncio.wait_for(stream.recv(), timeout=5.0)
+                                
                                 if data:
-                                    await self._process_stream_message(data)
+                                    self._last_stream_time = time.time()
+                                    await self._stream_buffer.put(data)
+                                    retry_count = 0
+                                
+                                # Verifica inatividade
+                                if time.time() - self._last_stream_time > 10:
+                                    break
+                                
                             except asyncio.TimeoutError:
                                 if not self.running:
                                     break
-                                continue
+                                break
                             except Exception as e:
                                 if not self.running:
                                     break
-                                self.logger.error(f"Erro no stream: {e}")
+                                self.logger.error(f"Erro no processamento do stream: {e}")
                                 await asyncio.sleep(1)
                                 continue
+                                
                 except Exception as e:
                     self.logger.error(f"Erro no websocket: {e}")
-                            
+                finally:
+                    try:
+                        # Remove da lista de streams ativos
+                        if stream in self.active_streams:
+                            self.active_streams.remove(stream)
+                        # Fecha conexão de forma segura
+                        await ws.close()
+                    except Exception as e:
+                        self.logger.error(f"Erro ao fechar websocket: {e}")
+                
+                if not self.running:
+                    break
+                    
+                # Tenta reconectar com backoff exponencial
+                if retry_count < max_retries:
+                    retry_count += 1
+                    delay = base_delay * (2 ** (retry_count - 1))
+                    self.logger.info(f"Tentando reconectar em {delay}s... (tentativa {retry_count}/{max_retries})")
+                    await asyncio.sleep(delay)
+                else:
+                    self.logger.warning("Máximo de tentativas alcançado, reconectando do zero...")
+                    retry_count = 0
+                    await asyncio.sleep(5)
+                    
             except Exception as e:
                 if not self.running:
                     break
                 self.logger.error(f"Erro no batch {symbols[0]}...: {e}")
                 await asyncio.sleep(5)
+
+    async def _process_stream_buffer(self):
+        """Processa mensagens do buffer de stream"""
+        while self.running:
+            try:
+                # Processa em lotes para melhor performance
+                messages = []
+                try:
+                    # Coleta mensagens disponíveis (máximo 100 por vez)
+                    for _ in range(100):
+                        if self._stream_buffer.empty():
+                            break
+                        messages.append(await self._stream_buffer.get())
+                except asyncio.QueueEmpty:
+                    pass
+
+                if messages:
+                    # Processa lote de mensagens
+                    start_time = time.time()
+                    for msg in messages:
+                        await self._process_stream_message(msg)
+                    
+                    # Atualiza métricas
+                    process_time = (time.time() - start_time) * 1000
+                    self.processing_times.append(process_time)
+                    if len(self.processing_times) > 1000:
+                        self.processing_times = self.processing_times[-1000:]
+
+                await asyncio.sleep(0.01)  # Pequena pausa entre processamentos
+                
+            except Exception as e:
+                self.logger.error(f"Erro no processador de buffer: {e}")
+                await asyncio.sleep(1)
 
     async def _process_stream_message(self, msg):
         """Processa mensagem do stream com dados reais da Binance"""
@@ -394,6 +470,14 @@ class BotCore:
             self.running = False
             self.is_connected = False
             
+            # Cancela processador de buffer
+            if self._buffer_processor_task and not self._buffer_processor_task.done():
+                self._buffer_processor_task.cancel()
+                try:
+                    await self._buffer_processor_task
+                except asyncio.CancelledError:
+                    pass
+            
             # Cancela todas as tasks ativas
             tasks = list(self._active_tasks)
             if tasks:
@@ -483,18 +567,22 @@ class BotCore:
             opportunities = []
             current_time = datetime.now()
             
-            # Usa dados reais da Binance
+            # Debug log inicial
+            self.logger.debug("Iniciando detecção de oportunidades...")
+            
             async with self._price_cache_lock:
                 price_cache = self.price_cache.copy()
             
-            # Usa apenas dados recentes (últimos 5 segundos)
+            # Log do tamanho do cache
+            self.logger.debug(f"Cache de preços: {len(price_cache)} pares")
+            
             recent_pairs = {
                 symbol: data for symbol, data in price_cache.items()
                 if isinstance(data, dict) and 'timestamp' in data and time.time() - data['timestamp'] < 5
             }
 
             if not recent_pairs:
-                self.logger.debug("Aguardando dados de preços da Binance...")
+                self.logger.debug("Cache vazio ou desatualizado")
                 return
 
             # Base pairs para triangular arbitrage
@@ -502,13 +590,13 @@ class BotCore:
             
             for base in base_pairs:
                 base_markets = [p for p in recent_pairs if base in p]
+                self.logger.debug(f"Analisando {len(base_markets)} mercados para {base}")
                 
                 for pair1 in base_markets:
                     for pair2 in base_markets:
                         if pair1 == pair2:
                             continue
                             
-                        # Encontra o terceiro par
                         try:
                             asset1 = pair1.replace(base, '')
                             asset2 = pair2.replace(base, '')
@@ -522,7 +610,6 @@ class BotCore:
                                 if pair3 not in recent_pairs:
                                     continue
                             
-                            # Calcula profit com dados reais
                             price1_data = recent_pairs[pair1]
                             price2_data = recent_pairs[pair2]
                             price3_data = recent_pairs[pair3]
@@ -531,73 +618,73 @@ class BotCore:
                                      for d in [price1_data, price2_data, price3_data]):
                                 continue
 
-                            profit = self._calculate_triangular_profit(
+                            # Calcula profit nos dois sentidos
+                            profit1 = ((1 / float(price1_data['ask'])) * float(price2_data['bid']) * float(price3_data['bid'])) - 1
+
+                            # Usa o melhor profit (mesmo que negativo)
+                            profit = max(profit1, profit2)
+                            
+                            # Inclui TODAS as oportunidades, mesmo negativas
+                            volume = self._calculate_max_volume(
                                 pair1, pair2, pair3,
                                 price1_data,
                                 price2_data,
                                 price3_data
                             )
                             
-                            if profit and profit > 0.1:  # Oportunidades com lucro > 0.1%
-                                volume = self._calculate_max_volume(
-                                    pair1, pair2, pair3,
-                                    price1_data,
-                                    price2_data,
-                                    price3_data
-                                )
-                                
-                                max_latency = max(
-                                    price1_data.get('latency', 0),
-                                    price2_data.get('latency', 0),
-                                    price3_data.get('latency', 0)
-                                )
-                                
-                                opportunity = {
-                                    'id': str(len(opportunities) + 1),
-                                    'a_step_from': base,
-                                    'a_step_to': asset1,
-                                    'b_step_from': asset1,
-                                    'b_step_to': asset2,
-                                    'c_step_from': asset2,
-                                    'c_step_to': base,
-                                    'profit': round(profit, 3),
-                                    'a_volume': volume,
-                                    'timestamp': current_time.isoformat(),
-                                    'rate': 1 + (profit / 100),
-                                    'latency': round(max_latency, 2),
-                                    'status': 'active',
-                                    'a_rate': float(price1_data['ask']),
-                                    'b_rate': float(price2_data['ask']),
-                                    'c_rate': float(price3_data['ask'])
-                                }
-                                opportunities.append(opportunity)
-                                
-                                # Log da oportunidade real encontrada
-                                self.logger.info(
-                                    f"💰 Oportunidade real: {base}→{asset1}→{asset2} | "
-                                    f"Profit: {profit:.2f}% | Volume: {volume:.8f} {base}"
-                                )
+                            max_latency = max(
+                                price1_data.get('latency', 0),
+                                price2_data.get('latency', 0),
+                                price3_data.get('latency', 0)
+                            )
+                            
+                            opportunity = {
+                                'id': str(len(opportunities) + 1),
+                                'a_step_from': base,
+                                'a_step_to': asset1,
+                                'b_step_from': asset1,
+                                'b_step_to': asset2,
+                                'c_step_from': asset2,
+                                'c_step_to': base,
+                                'profit': round(profit, 3),
+                                'a_volume': volume,
+                                'timestamp': current_time.isoformat(),
+                                'rate': 1 + (profit / 100),
+                                'latency': round(max_latency, 2),
+                                'status': 'active' if profit > 0 else 'inactive',
+                                'a_rate': float(price1_data['ask']),
+                                'b_rate': float(price2_data['ask']),
+                                'c_rate': float(price3_data['ask'])
+                            }
+                            opportunities.append(opportunity)
+                            
+                            # Log de cada oportunidade encontrada
+                            self.logger.debug(
+                                f"Oportunidade: {base}→{asset1}→{asset2} | "
+                                f"Profit: {profit:.2f}% | Volume: {volume:.8f} {base}"
+                            )
 
                         except Exception as e:
-                            self.logger.debug(f"Erro ao processar par: {e}")
+                            self.logger.error(f"Erro ao processar par {pair1}-{pair2}: {e}")
                             continue
             
-            # Atualiza oportunidades encontradas
+            # Atualiza oportunidades encontradas (mantém todas, incluindo negativas)
             if opportunities:
                 self.opportunities = sorted(
                     opportunities,
                     key=lambda x: float(x['profit']),
                     reverse=True
-                )[:10]  # Mantém apenas as 10 melhores
+                )
                 self.last_update = current_time
                 
-                # Log de performance
-                process_time = time.time() - start_time
-                self.processing_times.append(process_time)
-                self.logger.debug(f"⚡ Processamento em {process_time*1000:.2f}ms | {len(opportunities)} oportunidades reais")
+                # Log final
+                self.logger.info(f"Encontradas {len(opportunities)} oportunidades ({len([o for o in opportunities if float(o['profit']) > 0])} positivas)")
+                
+            process_time = (time.time() - start_time) * 1000
+            self.logger.debug(f"Detecção completada em {process_time:.2f}ms")
                 
         except Exception as e:
-            self.logger.error(f"❌ Erro na detecção de arbitragem: {e}")
+            self.logger.error(f"Erro na detecção de arbitragem: {e}")
             import traceback
             self.logger.error(f"Detalhes: {traceback.format_exc()}")
             return
@@ -633,41 +720,39 @@ class BotCore:
             return 0.001  # Volume mínimo default
 
     async def stop(self):
-        """Para o bot e realiza backup final"""
+        """Para o bot de forma segura"""
+        if self._is_shutting_down:
+            return
+            
+        self._is_shutting_down = True
+        print("Parando bot core...")
+        
         try:
+            # Sinaliza parada
+            self._shutdown_event.set()
             self.running = False
-            self.is_connected = False
             
-            # Para os componentes em ordem
-            tasks = []
+            # Para websocket da Binance
+            if hasattr(self, 'client') and self.client:
+                await self.client.close_connection()
             
-            # Verifica cada componente antes de adicionar à lista de tasks
-            if self.currency_core:
-                tasks.append(self.currency_core.stop_ticker_stream())
-            
-            if self.client:
-                tasks.append(self.client.close_connection())
+            # Cancela todas as tasks ativas usando o atributo público
+            for task in self.active_tasks:
+                if not task.done():
+                    task.cancel()
+                    try:
+                        await task
+                    except asyncio.CancelledError:
+                        pass
                 
-            if self.backup_manager:
-                try:
-                    await self.backup_manager.stop()  # Mudando para método stop()
-                except Exception as e:
-                    self.logger.error(f"Erro ao finalizar backup manager: {e}")
-            
-            # Aguarda todas as tarefas terminarem
-            if tasks:
-                await asyncio.gather(*tasks, return_exceptions=True)
-            
-            self.logger.info("✅ Bot parado com sucesso")
+            print("Bot core parado com sucesso")
             
         except Exception as e:
-            self.logger.error(f"❌ Erro ao parar bot: {e}")
-            raise
+            print(f"Erro ao parar bot core: {e}")
         finally:
-            # Garante que todas as tarefas pendentes sejam canceladas
-            for task in asyncio.all_tasks():
-                if task is not asyncio.current_task():
-                    task.cancel()
+            # Força a parada mesmo com erro
+            self.running = False
+            self._is_shutting_down = False
 
     async def execute_order(self, symbol: str, side: str, quantity: float, price: Optional[float] = None):
         """Executa ordens na Binance"""

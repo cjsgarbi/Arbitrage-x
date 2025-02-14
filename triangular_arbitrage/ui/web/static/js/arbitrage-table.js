@@ -15,18 +15,106 @@ class ArbitrageTableManager {
             return;
         }
 
-        // Inscreve para receber atualizações de oportunidades
-        this.wsManager.subscribe('opportunities', (data) => this.updateOpportunities(data));
+        // Inscreve para receber atualizações de oportunidades em tempo real
+        this.wsManager.subscribe('opportunities', (data) => {
+            this.updateOpportunities(data);
+            // Atualiza todos os elementos relacionados
+            this.updateTableData(data);
+            this.updateMetrics(data);
+            this.updateRouteIndicators(data);
+        });
+
         this.wsManager.subscribe('system_status', (data) => this.updateMetrics(data));
+    }
+
+    updateTableData(data) {
+        // Atualiza todos os elementos da tabela
+        if (Array.isArray(data)) {
+            data.forEach(opp => {
+                // Atualiza profit esperado e real
+                const profitExpected = parseFloat(opp.profit);
+                const profitReal = profitExpected * (1 - parseFloat(opp.slippage));
+                
+                // Atualiza slippage e tempo de execução
+                const slippage = parseFloat(opp.slippage) * 100;
+                const execTime = parseFloat(opp.executionTime);
+                
+                // Atualiza liquidez e risco
+                const liquidity = opp.liquidity;
+                const risk = opp.risk;
+                
+                // Atualiza spread e volatilidade
+                const spread = parseFloat(opp.spread);
+                const volatility = opp.volatility;
+                
+                // Atualiza confiança
+                const confidence = parseInt(opp.confidence);
+                
+                // Atualiza rota
+                this.updateRouteDisplay(opp.route, profitReal > 0.5);
+            });
+        }
+    }
+
+    updateRouteIndicators(data) {
+        if (!Array.isArray(data)) return;
+
+        // Atualiza badges de rotas ativas
+        const activeRoutes = data.filter(opp => parseFloat(opp.profit) > 0).length;
+        document.getElementById('routes-badge').textContent = `${activeRoutes} Rotas Ativas`;
     }
 
     updateOpportunities(data) {
         if (!Array.isArray(data)) return;
         
+        // Limpa estado atual
         this.opportunities.clear();
         this.table.innerHTML = '';
 
-        data.forEach(opp => {
+        // Inicializa com -- se não houver dados
+        if (data.length === 0) {
+            const emptyRow = document.createElement('tr');
+            emptyRow.innerHTML = `
+                <td colspan="10" class="p-6 text-center">
+                    <div class="flex flex-col items-center space-y-3">
+                        <div class="animate-pulse text-blue-500">
+                            <svg class="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+                                    d="M13 10V3L4 14h7v7l9-11h-7z" />
+                            </svg>
+                        </div>
+                        <div class="text-gray-600 dark:text-gray-300">
+                            Conectado à Binance, aguardando oportunidades de arbitragem...
+                        </div>
+                        <div class="text-sm text-gray-500">
+                            Monitorando pares de trading em tempo real
+                        </div>
+                    </div>
+                </td>
+            `;
+            this.table.appendChild(emptyRow);
+            return;
+        }
+
+        // Ordena oportunidades por lucro
+        const sortedOpportunities = data.sort((a, b) => 
+            parseFloat(b.profit || 0) - parseFloat(a.profit || 0)
+        );
+
+        // Atualiza status do exchange
+        const statusEl = document.getElementById('exchange-status');
+        if (statusEl) {
+            statusEl.innerHTML = `
+                <svg class="h-4 w-4 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+                        d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <span class="text-green-500 font-medium">Conectado à Binance</span>
+            `;
+        }
+
+        // Atualiza tabela com novos dados
+        sortedOpportunities.forEach(opp => {
             const row = document.createElement('tr');
             row.className = 'border-b hover:bg-gray-50 dark:hover:bg-gray-700';
             
@@ -96,9 +184,30 @@ class ArbitrageTableManager {
     }
 
     getProfitClass(profit) {
-        if (profit >= 1.0) return 'bg-green-100 text-green-800 dark:bg-green-700 dark:text-green-100';
-        if (profit >= 0.5) return 'bg-yellow-100 text-yellow-800 dark:bg-yellow-700 dark:text-yellow-100';
+        const value = parseFloat(profit);
+        if (!value || isNaN(value)) return 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-100';
+        if (value >= 1.0) return 'bg-green-100 text-green-800 dark:bg-green-700 dark:text-green-100';
+        if (value >= 0.5) return 'bg-yellow-100 text-yellow-800 dark:bg-yellow-700 dark:text-yellow-100';
+        if (value > 0) return 'bg-blue-100 text-blue-800 dark:bg-blue-700 dark:text-blue-100';
         return 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-100';
+    }
+
+    refresh() {
+        // Força atualização dos dados
+        if (this.wsManager && this.wsManager.ws?.readyState === WebSocket.OPEN) {
+            this.wsManager.ws.send(JSON.stringify({ type: 'request_update' }));
+        }
+
+        // Notifica que os dados estão sendo atualizados
+        this.table.innerHTML = `
+            <tr>
+                <td colspan="10" class="p-3 text-center">
+                    <div class="animate-pulse text-gray-500">
+                        Atualizando dados...
+                    </div>
+                </td>
+            </tr>
+        `;
     }
 
     getLiquidityClass(liquidity) {

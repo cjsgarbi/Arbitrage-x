@@ -1,7 +1,5 @@
-// Importa analisador
 import analyzer from './analysis.js';
 
-// Gerenciador de oportunidades de arbitragem
 class OpportunitiesManager {
     constructor() {
         this.table = document.getElementById('opportunities-body');
@@ -9,7 +7,24 @@ class OpportunitiesManager {
         this.lastUpdateElement = document.getElementById('last-update');
         this.autoRefreshButton = document.getElementById('auto-refresh');
         this.autoRefresh = true;
+        this.wsManager = window.wsManager;
         this.setupEventListeners();
+        this.initializeWebSocket();
+    }
+
+    initializeWebSocket() {
+        // Inscreve-se para receber atualizações de oportunidades
+        this.wsManager.subscribe('opportunities', (data) => {
+            if (this.autoRefresh) {
+                this.updateOpportunities(data);
+            }
+        });
+
+        // Solicita dados iniciais
+        this.wsManager.ws.send(JSON.stringify({
+            type: 'subscribe',
+            topics: ['opportunities']
+        }));
     }
 
     setupEventListeners() {
@@ -19,6 +34,20 @@ class OpportunitiesManager {
                 this.autoRefreshButton.classList.toggle('bg-indigo-200', this.autoRefresh);
                 this.autoRefreshButton.textContent = this.autoRefresh ? 'Auto Refresh On' : 'Auto Refresh Off';
             });
+        }
+    }
+
+    async analyzeOpportunity(route) {
+        try {
+            const response = await fetch(`/api/analyze-route?route=${encodeURIComponent(route)}`);
+            if (!response.ok) {
+                throw new Error('Erro ao analisar rota');
+            }
+            const data = await response.json();
+            analyzer.showAnalysisModal(data);
+        } catch (error) {
+            console.error('Erro ao analisar oportunidade:', error);
+            analyzer.showError('Não foi possível analisar esta oportunidade');
         }
     }
 

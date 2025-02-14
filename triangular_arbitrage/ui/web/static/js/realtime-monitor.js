@@ -2,9 +2,7 @@ class RealtimeMonitor {
     constructor() {
         this.activePairs = new Set();
         this.updateCallbacks = new Map();
-        this.ws = null;
-        this.reconnectAttempts = 0;
-        this.maxReconnectAttempts = 5;
+        this.wsManager = window.wsManager;
     }
 
     startMonitoring(pair, onUpdate) {
@@ -18,16 +16,16 @@ class RealtimeMonitor {
         // Cria elemento flutuante para monitoramento
         this.createMonitorElement(pair);
 
-        // Inicia conexão WebSocket se não existir
-        if (!this.ws) {
-            this.connectWebSocket();
-        } else {
-            // Envia mensagem para subscrever ao par
-            this.ws.send(JSON.stringify({
-                type: 'monitor_pair',
-                pair: pair
-            }));
-        }
+        // Inscreve-se para receber atualizações do par via WebSocket
+        this.wsManager.subscribe(`pair_monitor_${pair}`, (data) => {
+            this.updateMonitorData(pair, data);
+        });
+
+        // Solicita monitoramento do par
+        this.wsManager.ws.send(JSON.stringify({
+            type: 'monitor_pair',
+            pair: pair
+        }));
     }
 
     createMonitorElement(pair) {

@@ -1,20 +1,13 @@
 class TopPairsManager {
     constructor() {
         this.table = document.getElementById('top-pairs-body');
-        this.updateInterval = 5000; // 5 segundos
         this.lastUpdate = null;
+        this.wsManager = window.wsManager;
     }
 
-    async initialize() {
-        await this.updateTopPairs();
-        setInterval(() => this.updateTopPairs(), this.updateInterval);
-    }
-
-    async updateTopPairs() {
-        try {
-            const response = await fetch('/api/top-pairs');
-            const data = await response.json();
-            
+    initialize() {
+        // Inscreve-se no tópico de top pares via WebSocket
+        this.wsManager.subscribe('top_pairs', (data) => {
             this.renderPairs(data.pairs);
             this.lastUpdate = data.timestamp;
             
@@ -23,9 +16,13 @@ class TopPairsManager {
             if (pairsCount) {
                 pairsCount.textContent = data.total_monitored;
             }
-        } catch (error) {
-            console.error('Erro ao atualizar pares:', error);
-        }
+        });
+
+        // Solicita dados iniciais
+        this.wsManager.ws.send(JSON.stringify({
+            type: 'subscribe',
+            topics: ['top_pairs']
+        }));
     }
 
     renderPairs(pairs) {

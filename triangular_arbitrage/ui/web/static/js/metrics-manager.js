@@ -24,9 +24,97 @@ class MetricsManager {
             return;
         }
 
-        // Inscreve para receber atualizações do sistema
-        this.wsManager.subscribe('system_status', (data) => this.updateSystemMetrics(data));
-        this.wsManager.subscribe('opportunities', (data) => this.updateOpportunityMetrics(data));
+        // Inicializa campos com --
+        this.updateInitialState();
+
+        // Inscreve para receber atualizações em tempo real
+        this.wsManager.subscribe('opportunities', (data) => {
+            if (data && data.metrics) {
+                const metrics = this._formatMetrics(data.metrics);
+                this.updateMetricsDisplay(metrics);
+            }
+        });
+
+        // Solicita atualização inicial
+        this.wsManager.ws.send(JSON.stringify({
+            type: 'request_update'
+        }));
+    }
+    
+    updateInitialState() {
+        // Inicializa todos os campos com --
+        Object.keys(this.metricsElements).forEach(key => {
+            if (this.metricsElements[key] && key !== 'lastUpdate') {
+                this.metricsElements[key].textContent = '--';
+            }
+        });
+    }
+
+    _formatMetrics(metrics) {
+        return {
+            profit24h: metrics.profit_24h || 0,
+            successRate: metrics.success_rate || 0,
+            avgSlippage: metrics.avg_slippage || 0,
+            activeRoutes: metrics.active_routes || 0,
+            monitoredPairs: metrics.monitored_pairs || 0
+        };
+    }
+
+    calculateMetrics(opportunities) {
+        if (!opportunities || opportunities.length === 0) {
+            return {
+                profit24h: 0,
+                successRate: 0,
+                avgSlippage: 0,
+                activeRoutes: 0
+            };
+        }
+
+        const profits = opportunities.map(opp => parseFloat(opp.profit) || 0);
+        const successfulTrades = profits.filter(p => p > 0).length;
+
+        return {
+            profit24h: profits.reduce((a, b) => a + b, 0),
+            successRate: (successfulTrades / profits.length) * 100,
+            avgSlippage: opportunities.reduce((acc, opp) => acc + (parseFloat(opp.slippage) || 0), 0) / opportunities.length,
+            activeRoutes: opportunities.length
+        };
+    }
+
+    updateAllElements() {
+        // Atualiza todos os elementos com os dados mais recentes
+        const elements = {
+            'profit24h': this.lastMetrics.profit24h,
+            'successRate': this.lastMetrics.successRate,
+            'avgSlippage': this.lastMetrics.avgSlippage,
+            'activeRoutes': this.lastMetrics.activeRoutes
+        };
+
+        for (const [key, value] of Object.entries(this.metricsElements)) {
+            if (value) {
+                this.updateValueWithAnimation(key, this.formatValue(key, elements[key]));
+            }
+        }
+        
+        // Atualiza timestamp
+        this.updateLastUpdate();
+    }
+
+    formatValue(key, value) {
+        switch(key) {
+            case 'profit24h':
+                return new Intl.NumberFormat('pt-BR', {
+                    style: 'currency',
+                    currency: 'USD'
+                }).format(value);
+            case 'successRate':
+            case 'avgSlippage':
+                return `${value.toFixed(2)}%`;
+            case 'activeRoutes':
+                return value.toString();
+            default:
+                return value;
+        }
     }
 
     updateSystemMetrics(data) {
