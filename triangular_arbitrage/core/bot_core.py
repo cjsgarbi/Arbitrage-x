@@ -88,6 +88,28 @@ class BotCore:
         self.trading_core = None
         self.events_core = EventsCore()
 
+    def get_performance_metrics(self):
+        """Retorna métricas de performance do bot"""
+        try:
+            now = datetime.now()
+            time_running = (now - self.start_time).total_seconds()
+            
+            metrics = {
+                'uptime': time_running,
+                'active_pairs': len(self.symbol_pairs),
+                'latency': self.last_latency,
+                'opportunities_found': len(self.opportunities),
+                'last_update': self.last_update.isoformat() if self.last_update else None,
+                'status': 'active' if self.running else 'stopped',
+                'buffer_size': self._stream_buffer.qsize(),
+                'active_streams': len(self.active_streams)
+            }
+            
+            return metrics
+        except Exception as e:
+            self.logger.error(f"Erro ao gerar métricas: {e}")
+            return {}
+
     async def _load_top_pairs(self):
         """Carrega os pares mais negociados da Binance"""
         try:
@@ -121,11 +143,21 @@ class BotCore:
             self.logger.error(f"Erro ao carregar pares: {e}")
             return ['BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'ETHBTC', 'BNBBTC']  # Fallback para pares padrão
 
+    async def initialize(self):
+        """Inicializa o bot e estabelece conexões"""
+        try:
+            self.client = await AsyncClient.create(self.api_key, self.api_secret)
+            self.bsm = BinanceSocketManager(self.client)
+            self.is_connected = True
+            self.logger.info("✅ Conexão estabelecida com a Binance")
+            return True
+        except Exception as e:
+            self.logger.error(f"❌ Erro ao inicializar bot: {e}")
+            return False
+
     async def start(self):
         """Inicia o monitoramento dos pares e processamento de oportunidades"""
         try:
-            # Inicializa o cliente da Binance
-            self.client = await AsyncClient.create(self.api_key, self.api_secret)
             
             # Inicializa registro de histórico de oportunidades
             self.opportunities_history = []
@@ -166,26 +198,25 @@ class BotCore:
                 if not self.bsm:
                     self.bsm = BinanceSocketManager(self.client)
                 
-                try:
-                    ws = self.bsm.multiplex_socket(streams)
-                    async with ws as stream:
+                ws = self.bsm.multiplex_socket(streams)
+                async with ws as stream:
+                    try:
                         self.active_streams.append(stream)
                         self._last_stream_time = time.time()
                         
                         while self.running:
                             try:
-                                data = await asyncio.wait_for(stream.recv(), timeout=15.0)  # Aumentado para 15s
+                                data = await asyncio.wait_for(stream.recv(), timeout=15.0)
                                 
                                 if data:
                                     self._last_stream_time = time.time()
-                                    try:
-                                        if not self._stream_buffer.full():
-                                            await self._stream_buffer.put(data)
-                                            retry_count = 0
-                                    except asyncio.QueueFull:
+                                    if not self._stream_buffer.full():
+                                        await self._stream_buffer.put(data)
+                                        retry_count = 0
+                                    else:
                                         self.logger.warning("Buffer cheio, ignorando mensagem")
                                 
-                                if time.time() - self._last_stream_time > 30:  # Aumentado para 30s
+                                if time.time() - self._last_stream_time > 30:
                                     break
                                 
                             except asyncio.TimeoutError:
@@ -199,12 +230,11 @@ class BotCore:
                                 self.logger.error(f"Erro no processamento do stream: {e}")
                                 await asyncio.sleep(1)
                                 continue
-                                
-                except Exception as e:
-                    self.logger.error(f"Erro no websocket: {e}")
-                finally:
-                    if stream in self.active_streams:
-                        self.active_streams.remove(stream)
+                    except Exception as e:
+                        self.logger.error(f"Erro no stream: {e}")
+                    finally:
+                        if stream in self.active_streams:
+                            self.active_streams.remove(stream)
                 
                 if not self.running:
                     break
