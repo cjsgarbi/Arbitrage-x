@@ -62,7 +62,7 @@ class BotCore:
         self._cleanup_event = asyncio.Event()
         self._shutdown_event = asyncio.Event()
         self._is_shutting_down = False
-        self._stream_buffer = asyncio.Queue(maxsize=5000)
+        self._stream_buffer = asyncio.Queue(maxsize=10000)
         self._buffer_processor_task = None
         self._last_stream_time = time.time()
         
