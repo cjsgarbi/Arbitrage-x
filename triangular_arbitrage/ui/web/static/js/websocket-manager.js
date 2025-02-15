@@ -304,6 +304,15 @@ class WebSocketManager {
             }
         }
 
+        if (type === 'system_status' && data.data) {
+            console.log('Status do sistema recebido:', data.data);
+            // Garantindo que o status da IA seja um booleano
+            const aiStatus = data.data.ai_status === true;
+            console.log('Status da IA:', aiStatus);
+            this._updateAIStatus(aiStatus);
+            this.connectionStatus.isBinanceConnected = data.data.connected || false;
+        }
+
         const subscribers = this.subscribers.get(type);
         if (subscribers) {
             subscribers.forEach(callback => {
@@ -381,6 +390,45 @@ class WebSocketManager {
             const element = document.getElementById(id);
             if (element) element.textContent = value;
         });
+    }
+
+    _updateAIStatus(isConnected) {
+        const aiStatusEl = document.getElementById('ai-status');
+        if (!aiStatusEl) return;
+
+        if (isConnected === undefined || isConnected === null) {
+            // Estado de verificação
+            const statusHtml = `
+            <div class="flex items-center gap-2">
+                <span class="flex h-3 w-3">
+                    <span class="animate-ping absolute inline-flex h-3 w-3 rounded-full bg-yellow-400 opacity-75"></span>
+                    <span class="relative inline-flex rounded-full h-3 w-3 bg-yellow-500"></span>
+                </span>
+                <span class="text-yellow-500 font-medium">IA: Verificando conexão...</span>
+            </div>
+            `;
+            aiStatusEl.innerHTML = statusHtml;
+            return;
+        }
+
+        const statusHtml = isConnected ? `
+            <div class="flex items-center gap-2">
+                <span class="flex h-3 w-3">
+                    <span class="animate-ping absolute inline-flex h-3 w-3 rounded-full bg-green-400 opacity-75"></span>
+                    <span class="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span>
+                </span>
+                <span class="text-green-500 font-medium">IA: Conectada</span>
+            </div>
+        ` : `
+            <div class="flex items-center gap-2">
+                <span class="flex h-3 w-3">
+                    <span class="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
+                </span>
+                <span class="text-red-500 font-medium">IA: Desconectada</span>
+            </div>
+        `;
+
+        aiStatusEl.innerHTML = statusHtml;
     }
 
     _updateConnectionStatus(isConnected) {

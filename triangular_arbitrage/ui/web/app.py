@@ -693,18 +693,26 @@ class WebDashboard:
 
     async def _send_system_status(self, websocket: WebSocket):
         """Envia status do sistema"""
-        status = {
-            'connected': self.bot_core.is_connected,
-            'uptime': str(datetime.now() - self.bot_core.start_time),
-            'opportunities_found': len(getattr(self.bot_core, 'opportunities', [])),
-            'trades_executed': len(getattr(self.bot_core, 'trades', [])),
-            'performance': self.bot_core.get_performance_metrics()
-        }
+        try:
+            status = {
+                'connected': self.bot_core.is_connected,
+                'uptime': str(datetime.now() - self.bot_core.start_time),
+                'opportunities_found': len(getattr(self.bot_core, 'opportunities', [])),
+                'trades_executed': len(getattr(self.bot_core, 'trades', [])),
+                'performance': self.bot_core.get_performance_metrics(),
+                'ai_status': self.bot_core.get_ai_status()  # Usa o método get_ai_status atualizado
+            }
 
-        await websocket.send_text(json.dumps({
-            'type': 'system_status',
-            'data': status
-        }))
+            await websocket.send_text(json.dumps({
+                'type': 'system_status',
+                'data': status
+            }))
+            
+            # Envia status a cada 5 segundos
+            await asyncio.sleep(5)
+            
+        except Exception as e:
+            self.logger.error(f"Erro ao enviar status do sistema: {e}")
 
     async def _send_full_update(self, websocket: WebSocket):
         """Envia todas as atualizações disponíveis"""
@@ -846,7 +854,8 @@ class WebDashboard:
                 'opportunities_found': len(getattr(self.bot_core, 'opportunities', [])),
                 'trades_executed': len(getattr(self.bot_core, 'trades', [])),
                 'last_update': self.bot_core.last_update.isoformat() if hasattr(self.bot_core, 'last_update') and self.bot_core.last_update else None,
-                'ws_connections': len(self.manager.active_connections)
+                'ws_connections': len(self.manager.active_connections),
+                'ai_status': self.bot_core.get_ai_status()  # Usando o novo método
             }
 
         @self.app.get("/api/diagnostics")

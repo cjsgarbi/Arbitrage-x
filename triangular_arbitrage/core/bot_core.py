@@ -45,6 +45,8 @@ class BotCore:
         self.start_time = datetime.now()
         self.last_update = None
         self.running = True
+        self.is_ai_connected = False  # Flag simples para status da IA
+        self.is_ai_initialized = False
         
         # Locks e controles
         self._update_lock = asyncio.Lock()
@@ -110,37 +112,31 @@ class BotCore:
             self.logger.error(f"Erro ao gerar métricas: {e}")
             return {}
 
+    def get_ai_status(self) -> bool:
+        """Retorna status atual da IA"""
+        # Retorna True apenas se a IA foi inicializada E está conectada
+        return self.is_ai_initialized and self.is_ai_connected
+
     async def _load_top_pairs(self):
-        """Carrega os pares mais negociados da Binance"""
+        """Carrega os pares mais promissores usando IA"""
         try:
             if not self.client:
                 self.client = await AsyncClient.create(self.api_key, self.api_secret)
-                
-            # Obtém informações de 24h de todos os pares
-            tickers = await self.client.get_ticker()
-            
-            # Ordena por volume em USD
-            sorted_pairs = sorted(
-                tickers, 
-                key=lambda x: float(x['quoteVolume']), 
-                reverse=True
-            )
-            
-            # Filtra os top pares que incluem nossas moedas base
-            base_currencies = ['BTC', 'ETH', 'BNB', 'USDT', 'BUSD', 'USDC', 'DAI']
-            top_pairs = []
-            
-            for ticker in sorted_pairs[:50]:  # Considera os top 50 pares
-                symbol = ticker['symbol']
-                for base in base_currencies:
-                    if symbol.endswith(base):
-                        top_pairs.append(symbol)
-                        break
-            
-            self.logger.info(f"Pares carregados: {', '.join(top_pairs[:20])}")
-            return top_pairs[:20]  # Retorna os 20 melhores pares
+
+            # Usa o AIPairFinder existente para selecionar pares
+            from .ai_pair_finder import AIPairFinder
+            ai_finder = AIPairFinder()
+            selected_pairs = await ai_finder.get_potential_pairs()
+
+            if not selected_pairs:
+                self.logger.warning("IA não retornou pares, usando fallback")
+                return ['BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'ETHBTC', 'BNBBTC']
+
+            self.logger.info(f"Pares selecionados pela IA: {', '.join(selected_pairs)}")
+            return selected_pairs
+
         except Exception as e:
-            self.logger.error(f"Erro ao carregar pares: {e}")
+            self.logger.error(f"Erro ao carregar pares com IA: {e}")
             return ['BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'ETHBTC', 'BNBBTC']  # Fallback para pares padrão
 
     async def initialize(self):
@@ -150,6 +146,12 @@ class BotCore:
             self.bsm = BinanceSocketManager(self.client)
             self.is_connected = True
             self.logger.info("✅ Conexão estabelecida com a Binance")
+            
+            # Atualiza status da IA
+            self.is_ai_initialized = True
+            self.is_ai_connected = True
+            self.logger.info("✅ Status da IA: Conectada")
+            
             return True
         except Exception as e:
             self.logger.error(f"❌ Erro ao inicializar bot: {e}")
