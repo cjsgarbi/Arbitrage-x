@@ -3,19 +3,22 @@ class WebSocketManager {
         this.ws = null;
         this.subscribers = new Map();
         this.reconnectAttempts = 0;
-        this.maxReconnectAttempts = 5;
-        this.reconnectDelay = 1000;
+        this.maxReconnectAttempts = 8;   // Ajustado para 8 tentativas
+        this.reconnectDelay = 2500;      // Aumentado para 2500ms
+        this.maxReconnectDelay = 25000;  // Ajustado para 25s entre tentativas
         this.isConnecting = false;
         this.binanceSubscriptions = new Set(['opportunities', 'system_status', 'top_pairs']);
         this.messageBuffer = [];
-        this.bufferInterval = 50;
+        this.bufferInterval = 150;       // Ajustado para 150ms para processamento mais suave
+        this.maxBufferSize = 2000;       // Limite máximo do buffer
         this.bufferProcessor = null;
         this.isShuttingDown = false;
         this.lastMessageTime = Date.now();
         this.connectionStatus = {
             isConnected: false,
             isBinanceConnected: false,
-            lastActivity: null
+            lastActivity: null,
+            state: 'DISCONNECTED'  // Novo: controle de estado
         };
         
         this.initialize();
@@ -32,7 +35,7 @@ class WebSocketManager {
         setInterval(() => {
             if (this.connectionStatus.isBinanceConnected) {
                 const timeSinceActivity = Date.now() - (this.connectionStatus.lastActivity || 0);
-                const isActive = timeSinceActivity < 5000; // Considera ativo se recebeu dados nos últimos 5s
+                const isActive = timeSinceActivity < 10000; // Aumentado de 5s para 10s
 
                 statusEl.innerHTML = `
                     <div class="flex items-center gap-2">
@@ -46,44 +49,41 @@ class WebSocketManager {
                     </div>
                 `;
             }
-        }, 1000);
+        }, 2000);  // Aumentado de 1s para 2s
     }
 
     _setupConnectionMonitor() {
-        // Monitora estado da conexão a cada 3 segundos
         setInterval(() => {
             if (this.isShuttingDown) return;
 
             const now = Date.now();
             const timeSinceLastMessage = now - this.lastMessageTime;
-            const timeSinceLastActivity = now - (this.connectionStatus.lastActivity || 0);
 
-            // Se não receber mensagens por 10 segundos, tenta reconectar
-            if (timeSinceLastMessage > 10000) {
-                console.log('Sem mensagens por 10s, verificando conexão...');
+            // Ajuste mais conservador do timeout de inatividade
+            if (timeSinceLastMessage > 15000 && !this.isConnecting) {  // Reduzido para 15s para verificação mais rápida
                 this.checkConnection();
             }
 
-            // Se não houver atividade por 15 segundos, força reconexão
-            if (timeSinceLastActivity > 15000) {
-                console.log('Sem atividade por 15s, forçando reconexão...');
+            const timeSinceLastActivity = now - (this.connectionStatus.lastActivity || 0);
+            if (timeSinceLastActivity > 25000) {  // Reduzido para 25s para ação mais rápida
+                console.log('Sem atividade por 25s, verificando conexão...');
                 this._updateConnectionStatus(false);
-                this._attemptReconnect();
+                this.checkConnection();
             }
-
-        }, 3000);
+        }, 7500);  // Ajustado para 7.5s para equilíbrio entre resposta e overhead
     }
 
     _setupShutdown() {
-        // Adiciona handler para SIGINT (Ctrl+C)
         window.addEventListener('beforeunload', (event) => {
             this.shutdown();
         });
 
-        // Adiciona handler para fechamento da página
         document.addEventListener('visibilitychange', () => {
             if (document.hidden) {
                 this.shutdown();
+            } else {
+                // Reconecta ao voltar para a página
+                this.checkConnection();
             }
         });
     }
@@ -92,30 +92,22 @@ class WebSocketManager {
         try {
             this.isShuttingDown = true;
             
-            // Para o processador de buffer
             if (this.bufferProcessor) {
                 clearInterval(this.bufferProcessor);
                 this.bufferProcessor = null;
             }
 
-            // Limpa o buffer
             this.messageBuffer = [];
 
-            // Fecha conexão WebSocket
             if (this.ws) {
                 this.ws.close();
                 this.ws = null;
             }
 
-            // Limpa subscribers
             this.subscribers.clear();
-            
-            // Limpa binanceSubscriptions
             this.binanceSubscriptions.clear();
-
-            console.log('WebSocket finalizado com sucesso');
             
-            // Atualiza status visual
+            console.log('WebSocket finalizado com sucesso');
             this._updateConnectionStatus(false);
             
         } catch (error) {
@@ -124,12 +116,20 @@ class WebSocketManager {
     }
 
     _setupBufferProcessor() {
-        // Processa mensagens em lote para melhor performance
         this.bufferProcessor = setInterval(() => {
             if (this.isShuttingDown) return;
             
             if (this.messageBuffer.length > 0) {
-                const messages = this.messageBuffer.splice(0);
+                // Processa em lotes de até 100 mensagens
+                const batchSize = Math.min(100, this.messageBuffer.length);
+                const messages = this.messageBuffer.splice(0, batchSize);
+                
+                // Verifica overflow do buffer
+                if (this.messageBuffer.length > this.maxBufferSize) {
+                    console.warn(`Buffer overflow, removendo ${this.messageBuffer.length - this.maxBufferSize} mensagens`);
+                    this.messageBuffer = this.messageBuffer.slice(-this.maxBufferSize);
+                }
+                
                 messages.forEach(msg => this._processMessage(msg));
             }
         }, this.bufferInterval);
@@ -137,14 +137,14 @@ class WebSocketManager {
 
     initialize() {
         this.connect();
-        // Monitora status da conexão
-        setInterval(() => this.checkConnection(), 5000);
+        setInterval(() => this.checkConnection(), 7500);  // Ajustado para mesmo intervalo do monitor
     }
 
     connect() {
         if (this.ws?.readyState === WebSocket.OPEN || this.isConnecting) return;
         
         this.isConnecting = true;
+        this.connectionStatus.state = 'CONNECTING';
         const wsUrl = `ws://${window.location.host}/ws`;
         
         try {
@@ -157,12 +157,10 @@ class WebSocketManager {
                 this.reconnectAttempts = 0;
                 this._updateConnectionStatus(true);
                 this.connectionStatus.lastActivity = Date.now();
+                this.connectionStatus.state = 'CONNECTED';
                 
-                // Solicita atualização inicial de dados
-                this.ws.send(JSON.stringify({ 
-                    type: 'request_update',
-                    timestamp: Date.now()
-                }));
+                // Reinscreve em todos os tópicos
+                this._resubscribeAll();
             };
             
             this.ws.onmessage = (event) => {
@@ -178,8 +176,8 @@ class WebSocketManager {
                 console.log('Conexão WebSocket fechada:', event.code, event.reason);
                 this.isConnecting = false;
                 this._updateConnectionStatus(false);
+                this.connectionStatus.state = 'DISCONNECTED';
                 
-                // Só tenta reconectar se não foi um fechamento limpo
                 if (event.code !== 1000) {
                     this.handleDisconnect();
                 }
@@ -189,22 +187,41 @@ class WebSocketManager {
                 console.error('Erro na conexão WebSocket:', error);
                 this.isConnecting = false;
                 this._updateConnectionStatus(false);
+                this.connectionStatus.state = 'DISCONNECTED';
             };
             
         } catch (error) {
             console.error('Erro ao criar conexão WebSocket:', error);
             this.isConnecting = false;
             this._updateConnectionStatus(false);
+            this.connectionStatus.state = 'DISCONNECTED';
         }
+    }
+
+    _resubscribeAll() {
+        if (this.ws?.readyState === WebSocket.OPEN) {
+            const topics = Array.from(this.binanceSubscriptions);
+            if (topics.length > 0) {
+                this.ws.send(JSON.stringify({
+                    type: 'subscribe',
+                    topics: topics
+                }));
+            }
+        }
+    }
+
+    calculateReconnectDelay() {
+        // Exponential backoff com jitter mais suave
+        const jitter = Math.random() * 500;  // Reduzido para 500ms de jitter
+        const baseDelay = this.reconnectDelay * Math.pow(1.3, this.reconnectAttempts);  // Fator reduzido para 1.3
+        return Math.min(baseDelay + jitter, this.maxReconnectDelay);
     }
 
     subscribe(topic, callback) {
         if (!this.subscribers.has(topic)) {
             this.subscribers.set(topic, new Set());
-            // Adiciona à lista de inscrições da Binance se não for um tópico interno
             if (!topic.startsWith('_')) {
                 this.binanceSubscriptions.add(topic);
-                // Se já estiver conectado, envia inscrição
                 if (this.ws?.readyState === WebSocket.OPEN) {
                     this.ws.send(JSON.stringify({
                         type: 'subscribe',
@@ -219,7 +236,6 @@ class WebSocketManager {
     unsubscribe(topic, callback) {
         if (this.subscribers.has(topic)) {
             this.subscribers.get(topic).delete(callback);
-            // Se não houver mais callbacks, remove a inscrição
             if (this.subscribers.get(topic).size === 0) {
                 this.subscribers.delete(topic);
                 this.binanceSubscriptions.delete(topic);
@@ -241,7 +257,6 @@ class WebSocketManager {
             return;
         }
 
-        // Envia ping para verificar conexão
         try {
             this.ws.send(JSON.stringify({ 
                 type: 'ping',
@@ -254,14 +269,10 @@ class WebSocketManager {
     }
 
     _handleMessage(data) {
-        // Atualiza timestamp da última mensagem
         this.lastMessageTime = Date.now();
-        
-        // Atualiza status de conexão
         this.connectionStatus.lastActivity = Date.now();
         
         if (data.type === 'ping') {
-            // Responde imediatamente ao ping
             if (this.ws?.readyState === WebSocket.OPEN) {
                 this.ws.send(JSON.stringify({ 
                     type: 'pong',
@@ -271,7 +282,6 @@ class WebSocketManager {
             return;
         }
 
-        // Adiciona ao buffer para processamento em lote
         if (!this.isShuttingDown) {
             this.messageBuffer.push(data);
             this._updateConnectionStatus(true);
@@ -281,39 +291,43 @@ class WebSocketManager {
     _processMessage(data) {
         const type = data.type;
         
-        // Trata pong separadamente
         if (type === 'pong') {
             this._updateConnectionStatus(true);
             return;
         }
 
-        // Trata dados de oportunidades
         if (type === 'opportunities' && data.data) {
             this._updateOpportunities(data.data);
             
-            // Atualiza métricas se disponíveis
             if (data.metrics) {
                 this._updateMetrics(data.metrics);
             }
         }
 
-        // Distribui para subscribers
         const subscribers = this.subscribers.get(type);
         if (subscribers) {
-            subscribers.forEach(callback => callback(data.data));
+            subscribers.forEach(callback => {
+                try {
+                    callback(data.data);
+                } catch (error) {
+                    console.error('Erro ao executar callback:', error);
+                }
+            });
         }
     }
 
     _updateOpportunities(opportunities) {
-        if (!Array.isArray(opportunities)) return;
+        if (!Array.isArray(opportunities)) {
+            return;
+        }
         
         const tableBody = document.getElementById('arbitrage-pairs-table');
-        if (!tableBody) return;
+        if (!tableBody) {
+            return;
+        }
 
-        // Limpa tabela
         tableBody.innerHTML = '';
 
-        // Adiciona novas oportunidades (incluindo negativas)
         opportunities.forEach(opp => {
             const row = document.createElement('tr');
             const profitColor = parseFloat(opp.profit) > 0 ? 'text-green-500' : 'text-red-500';
@@ -348,7 +362,6 @@ class WebSocketManager {
             tableBody.appendChild(row);
         });
 
-        // Atualiza contador de oportunidades
         const countEl = document.getElementById('opportunities-count');
         if (countEl) {
             const activeCount = opportunities.filter(o => parseFloat(o.profit) > 0).length;
@@ -357,7 +370,6 @@ class WebSocketManager {
     }
 
     _updateMetrics(metrics) {
-        // Atualiza métricas
         const elements = {
             'total-profit-24h': metrics.profit_24h ? `$${metrics.profit_24h.toFixed(2)}` : '--',
             'success-rate': metrics.success_rate ? `${metrics.success_rate.toFixed(1)}%` : '--',
@@ -371,50 +383,30 @@ class WebSocketManager {
         });
     }
 
-    _updateSystemStatus(status) {
-        const statusEl = document.getElementById('exchange-status');
-        if (!statusEl) return;
-
-        statusEl.innerHTML = status.is_connected ? `
-            <svg class="h-4 w-4 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            <span class="text-green-500 font-medium">Conectado</span>
-        ` : `
-            <svg class="h-4 w-4 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-            </svg>
-            <span class="text-red-500 font-medium">Desconectado</span>
-        `;
-
-        // Atualiza timestamp
-        const timeEl = document.getElementById('last-update');
-        if (timeEl) {
-            timeEl.textContent = `Atualizado: ${new Date().toLocaleTimeString()}`;
-        }
-    }
-
     _updateConnectionStatus(isConnected) {
         const statusEl = document.getElementById('exchange-status');
         if (!statusEl) return;
 
-        if (isConnected) {
-            statusEl.innerHTML = `
-                <svg class="h-4 w-4 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
-                          d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
+        this.connectionStatus.isConnected = isConnected;
+        
+        const statusHtml = isConnected ? `
+            <div class="flex items-center gap-2">
+                <span class="flex h-3 w-3">
+                    <span class="animate-ping absolute inline-flex h-3 w-3 rounded-full bg-green-400 opacity-75"></span>
+                    <span class="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span>
+                </span>
                 <span class="text-green-500 font-medium">Conectado</span>
-            `;
-        } else {
-            statusEl.innerHTML = `
-                <svg class="h-4 w-4 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
-                          d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                </svg>
+            </div>
+        ` : `
+            <div class="flex items-center gap-2">
+                <span class="flex h-3 w-3">
+                    <span class="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
+                </span>
                 <span class="text-red-500 font-medium">Desconectado</span>
-            `;
-        }
+            </div>
+        `;
+
+        statusEl.innerHTML = statusHtml;
     }
 
     _attemptReconnect() {
@@ -424,29 +416,23 @@ class WebSocketManager {
         }
 
         this.reconnectAttempts++;
-        const delay = this.reconnectDelay * Math.pow(2, this.reconnectAttempts - 1);
+        const delay = this.calculateReconnectDelay();
         
-        console.log(`Tentando reconectar em ${delay}ms (tentativa ${this.reconnectAttempts})`);
+        console.log(`Tentando reconectar em ${delay}ms (tentativa ${this.reconnectAttempts}/${this.maxReconnectAttempts})`);
         
         setTimeout(() => {
-            if (this.ws?.readyState === WebSocket.CLOSED) {
+            if (!this.ws || this.ws.readyState === WebSocket.CLOSED) {
                 this.connect();
             }
         }, delay);
     }
 
     handleDisconnect() {
-        // Limpa heartbeat existente
-        if (this.heartbeatInterval) {
-            clearInterval(this.heartbeatInterval);
-            this.heartbeatInterval = null;
-        }
-        
-        // Tenta reconectar se não ultrapassou o limite de tentativas
-        if (!this.isReconnecting && this.reconnectAttempts < this.maxReconnectAttempts) {
-            this.isReconnecting = true;
+        if (this._isShuttingDown) return;
+
+        if (!this.isConnecting && this.reconnectAttempts < this.maxReconnectAttempts) {
             const delay = this.calculateReconnectDelay();
-            console.log(`Tentando reconectar em ${delay}ms...`);
+            console.log(`Reconectando em ${delay}ms... (tentativa ${this.reconnectAttempts + 1}/${this.maxReconnectAttempts})`);
             
             setTimeout(() => {
                 this.reconnectAttempts++;
@@ -459,7 +445,6 @@ class WebSocketManager {
     }
 }
 
-// Cria e exporta instância única
 const wsManager = new WebSocketManager();
-window.wsManager = wsManager; // Torna acessível globalmente
+window.wsManager = wsManager;
 export default wsManager;

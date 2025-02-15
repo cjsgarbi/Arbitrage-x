@@ -21,6 +21,8 @@ class Display:
         self.opportunities = []
         self.pairs_monitored = 0
         self.logger = logging.getLogger(__name__)
+        self.live = Live()
+        self.table = Table()
 
     def clear_screen(self):
         """Limpa a tela do console"""
