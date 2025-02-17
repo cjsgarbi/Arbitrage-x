@@ -7,11 +7,11 @@
 triangular_arbitrage/
 └── core/
     └── ai_pair_finder.py  # Novo módulo para o agente IA
-```
+```Modificar apenas o método `_load_top_pairs()` no bot_core.py
+- Manter toda a lógica de IA separada do código principal-
 
 ### 1.2 Integração Mínima
-- Modificar apenas o método `_load_top_pairs()` no bot_core.py
-- Manter toda a lógica de IA separada do código principal
+ 
 
 ## 2. Implementação do Agente
 

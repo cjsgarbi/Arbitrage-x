@@ -56,3 +56,5 @@ mypy>=1.5.1            # Verificador de tipos estáticos
 # pymongo - Mudamos para SQLite
 # networkx - Não usamos mais análise de grafos
 # python-telegram-bot - Opcional, pode ser instalado separadamente
+
+langchain>=0.1.11
