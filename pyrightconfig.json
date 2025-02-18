@@ -13,5 +13,9 @@
     ],
     "typeCheckingMode": "basic",
     "useLibraryCodeForTypes": true,
-    "reportMissingImports": "warning"
+    "reportMissingImports": "warning",
+    "reportUnknownMemberType": "none",
+    "pythonVersion": "3.10",
+    "venvPath": ".",
+    "venv": "venv"
 }

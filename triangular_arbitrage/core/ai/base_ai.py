@@ -1,11 +1,11 @@
 """
-Classe base para implementações de IA
+Classe base para implementação de IA com OpenRouter
 """
 from abc import ABC, abstractmethod
 from typing import Dict, List, Optional
 
 class BaseAI(ABC):
-    """Classe abstrata base para implementações de IA"""
+    """Classe abstrata base para implementação de IA"""
     
     def __init__(self, config: Optional[Dict] = None):
         """
@@ -73,7 +73,7 @@ class BaseAI(ABC):
         Returns:
             bool: True se válido, False caso contrário
         """
-        required_fields = ['model_name', 'provider']
+        required_fields = ['model_name', 'api_key']
         return all(field in config for field in required_fields)
 
     def get_model_info(self) -> Dict:
@@ -84,7 +84,6 @@ class BaseAI(ABC):
             Dict: Informações do modelo
         """
         return {
-            'provider': self.config.get('provider', 'unknown'),
             'model_name': self.config.get('model_name', 'unknown'),
             'is_ready': self.is_ready,
             'supported_features': self.get_supported_features()

@@ -113,4 +113,4 @@ Removendo todas as complexidades desnecessárias, o sistema ficará:
 - Mais fácil de manter
 - Mais eficiente em recursos
 
-Voce deve inprementar todos esses itens sempre  mantendo o restante do repo e focando nos objetivos de avaliacao_essencial sem fazer mudanças radicas que possam prejudicar o repo e use os aquivos e pastas do repo, vc nao pode fazer nada sem antes consultar o avaliacao_essencial.md , faça por etapa de eliminaçao marcando os itens imprementados e em cada estapa teste e se não tiver erros vc passa para proxima etapa ate terminar o objetivo de avaliacao_essencial .
+Você sempre inicie aqui a cada estapa concluida : Voce deve inprementar todos esses itens sempre  mantendo o restante do repo e focando nos objetivos de memory sem fazer mudanças radicas que possam prejudicar o repo, use os aquivos e pastas do repo e crie somente arquivos de memory, vc nao pode fazer nada sem antes consultar o memory.md , faça por etapa de eliminaçao marcando os itens imprementados com um (x),antes teste as iprementações para ver a existencias de erros, na ausencia de erros  passe para proxima etapa ate terminar o objetivo de memory.md.

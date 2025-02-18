@@ -8,6 +8,14 @@ class OpportunitiesManager {
         this.autoRefreshButton = document.getElementById('auto-refresh');
         this.autoRefresh = true;
         this.wsManager = window.wsManager;
+        
+        // Configurações para melhor performance
+        this.updateInterval = 100; // Atualiza a cada 100ms
+        this.maxRows = 50; // Mostra até 50 oportunidades
+        this.minProfit = -0.2; // Mostra oportunidades > -0.2%
+        this.lastUpdate = Date.now();
+        this.pendingUpdate = null;
+        
         this.setupEventListeners();
         this.initializeWebSocket();
     }
@@ -55,7 +63,25 @@ class OpportunitiesManager {
         if (!this.table || !this.autoRefresh) return;
         if (!data || !data.data) return;
 
-        const opportunities = data.data;
+        // Throttle updates para melhor performance
+        const now = Date.now();
+        if (now - this.lastUpdate < this.updateInterval) {
+            if (!this.pendingUpdate) {
+                this.pendingUpdate = setTimeout(() => {
+                    this.updateOpportunities(data);
+                    this.pendingUpdate = null;
+                }, this.updateInterval);
+            }
+            return;
+        }
+        this.lastUpdate = now;
+
+        // Filtra e ordena oportunidades
+        const opportunities = data.data
+            .filter(opp => parseFloat(opp.profit) > this.minProfit)
+            .sort((a, b) => parseFloat(b.profit) - parseFloat(a.profit))
+            .slice(0, this.maxRows);
+
         const metadata = data.metadata || {};
 
         // Limpa tabela atual
@@ -72,43 +98,58 @@ class OpportunitiesManager {
             row.className = 'hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors';
             
             const profit = parseFloat(opp.profit);
-            const profitClass = profit > 1.0 ? 'text-green-600 dark:text-green-400' : 
-                              profit > 0.5 ? 'text-yellow-600 dark:text-yellow-400' : 
+            const profitClass = profit > 1.0 ? 'text-green-600 dark:text-green-400' :
+                              profit > 0.5 ? 'text-yellow-600 dark:text-yellow-400' :
                               'text-gray-600 dark:text-gray-400';
+            
+            // Adiciona informações detalhadas
+            const metrics = opp.market_metrics || {};
+            const volumes = metrics.volumes || {};
+            const spreads = metrics.spreads || {};
+            const latencies = metrics.latencies || {};
             
             const statusClass = opp.status === 'active' ? 
                 'bg-green-100 text-green-800 dark:bg-green-700 dark:text-green-100' :
                 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-100';
 
+            // Calcula médias das métricas
+            const avgVolume = Object.values(volumes).reduce((a, b) => a + b, 0) / Object.keys(volumes).length;
+            const avgSpread = Object.values(spreads).reduce((a, b) => a + b, 0) / Object.keys(spreads).length;
+            const avgLatency = Object.values(latencies).reduce((a, b) => a + b, 0) / Object.keys(latencies).length;
+
             row.innerHTML = `
                 <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">
                     ${this.formatRoute(opp.route)}
+                    <div class="text-xs text-gray-500 mt-1">ID: ${opp.id}</div>
                 </td>
                 <td class="px-6 py-4 whitespace-nowrap text-sm ${profitClass}">
-                    ${profit.toFixed(4)}%
+                    <div class="font-bold">${profit.toFixed(4)}%</div>
+                    <div class="text-xs text-gray-500 mt-1">Fee: ${(metrics.fees || 0).toFixed(3)}%</div>
                 </td>
-                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-300">
-                    ${parseFloat(opp.volume || 0).toFixed(8)}
+                <td class="px-6 py-4 whitespace-nowrap text-sm">
+                    <div class="text-gray-900 dark:text-white">${avgVolume.toFixed(2)} USDT</div>
+                    <div class="text-xs text-gray-500 mt-1">Spread: ${(avgSpread * 100).toFixed(4)}%</div>
                 </td>
                 <td class="px-6 py-4 whitespace-nowrap">
-                    <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${statusClass}">
-                        ${opp.status}
-                    </span>
+                    <div class="flex items-center">
+                        <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${statusClass}">
+                            ${opp.status || 'active'}
+                        </span>
+                        <span class="ml-2 text-xs text-gray-500">${avgLatency.toFixed(1)}ms</span>
+                    </div>
                 </td>
                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-300">
                     ${this.formatTimestamp(opp.timestamp)}
                 </td>
-                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-300">
-                    ${opp.status === 'active' ? `
-                        <button onclick="window.opportunitiesManager.monitorOpportunity('${opp.route}')" 
-                                class="text-indigo-600 hover:text-indigo-900 dark:text-indigo-400 dark:hover:text-indigo-300 mr-3">
-                            Monitor
-                        </button>
-                        <button onclick="window.opportunitiesManager.analyzeOpportunity('${opp.route}')"
-                                class="text-green-600 hover:text-green-900 dark:text-green-400 dark:hover:text-green-300">
-                            Analisar
-                        </button>
-                    ` : 'Monitorando'}
+                <td class="px-6 py-4 whitespace-nowrap text-sm space-x-2">
+                    <button onclick="window.opportunitiesManager.monitorOpportunity('${opp.route}')"
+                            class="px-3 py-1 bg-indigo-100 text-indigo-700 rounded-md hover:bg-indigo-200 transition-colors">
+                        Monitor
+                    </button>
+                    <button onclick="window.opportunitiesManager.analyzeOpportunity('${opp.route}')"
+                            class="px-3 py-1 bg-green-100 text-green-700 rounded-md hover:bg-green-200 transition-colors">
+                        Analisar
+                    </button>
                 </td>
             `;
             

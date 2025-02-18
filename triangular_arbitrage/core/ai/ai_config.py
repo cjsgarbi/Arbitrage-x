@@ -1,5 +1,5 @@
 """
-Configurações para modelos de IA
+Configurações para modelos de IA usando OpenRouter
 """
 from typing import Dict, Optional
 from dataclasses import dataclass, asdict
@@ -10,17 +10,15 @@ class AIConfig:
     Configurações para modelos de IA
     
     Attributes:
-        provider (str): Provedor de IA ('huggingface', 'openrouter')
         model_name (str): Nome do modelo a ser usado
-        api_key (Optional[str]): Chave de API (se necessário)
+        api_key (Optional[str]): Chave de API do OpenRouter
         batch_size (int): Tamanho do lote para processamento
         max_retries (int): Número máximo de tentativas
         timeout (int): Timeout em segundos
         cache_ttl (int): Tempo de vida do cache em segundos
     """
     
-    provider: str = "openrouter"
-    model_name: str = "deepseek/deepseek-r1-distill-llama-70b:free"
+    model_name: str = "gpt-4"
     api_key: Optional[str] = None
     batch_size: int = 32
     max_retries: int = 3
@@ -38,13 +36,7 @@ class AIConfig:
     
     def validate(self) -> bool:
         """Valida configurações"""
-        if not self.provider or not self.model_name:
-            return False
-            
-        if self.provider not in ["huggingface", "openrouter"]:
-            return False
-            
-        if self.provider == "openrouter" and not self.api_key:
+        if not self.model_name or not self.api_key:
             return False
             
         if any(v <= 0 for v in [self.batch_size, self.max_retries, self.timeout, self.cache_ttl]):
@@ -53,21 +45,13 @@ class AIConfig:
         return True
 
     def get_provider_config(self) -> Dict:
-        """Retorna configurações específicas do provedor"""
-        provider_configs = {
-            "huggingface": {
-                "use_auth": False,
-                "model_type": "embeddings",
-                "max_length": 512
-            },
-            "openrouter": {
-                "use_auth": True,
-                "model_type": "completion",
-                "temperature": 0.7,
-                "max_tokens": 256
-            }
+        """Retorna configurações específicas do OpenRouter"""
+        return {
+            "use_auth": True,
+            "model_type": "completion",
+            "temperature": 0.7,
+            "max_tokens": 256
         }
-        return provider_configs.get(self.provider, {})
 
     def get_feature_flags(self) -> Dict[str, bool]:
         """Retorna flags de recursos disponíveis"""
@@ -75,5 +59,5 @@ class AIConfig:
             "use_cache": True,
             "use_batching": self.batch_size > 1,
             "use_retry": self.max_retries > 0,
-            "requires_auth": self.provider != "huggingface"
+            "requires_auth": True
         }

@@ -181,7 +181,13 @@ class BotCore:
         except Exception as e:
             self.logger.error(f"Erro ao iniciar bot: {e}")
         finally:
-            await self._cleanup()
+            await self.stop()
+
+    async def stop(self):
+        """Para o bot e limpa recursos"""
+        self.running = False
+        await self._cleanup()
+        self.logger.info("BotCore stopped")
 
     async def _handle_batch_stream(self, symbols):
         """Gerencia um batch de streams com reconexão inteligente"""
@@ -393,8 +399,8 @@ class BotCore:
                                      for d in [price1_data, price2_data, price3_data]):
                                 continue
                             
-                            # Verifica liquidez mínima (1000 USDT ou equivalente)
-                            min_volume = 1000.0
+                            # Reduz volume mínimo para 100 USDT
+                            min_volume = 100.0
                             volumes = [
                                 price1_data['bidVolume'] * price1_data['bid'],
                                 price2_data['bidVolume'] * price2_data['bid'],
@@ -403,16 +409,17 @@ class BotCore:
                             
                             if any(volume < min_volume for volume in volumes):
                                 continue
-
+                
                             # Taxa de trading (0.1% por operação)
                             fee_rate = 0.001
                             
-                            # Cálculo considerando taxas
+                            # Cálculo considerando taxas em ambas direções
                             profit1 = ((1 / float(price1_data['ask'])) * float(price2_data['bid']) * float(price3_data['bid'])) * (1 - fee_rate)**3 - 1
                             profit2 = ((1 / float(price3_data['ask'])) * (1 / float(price2_data['ask'])) * float(price1_data['bid'])) * (1 - fee_rate)**3 - 1
                             
                             profit = max(profit1, profit2)
-                            if profit > -0.001:  # Ajustado para mostrar oportunidades > -0.1%
+                            # Mostra oportunidades > -0.2%
+                            if profit > -0.002:
                                 # Log detalhado da oportunidade
                                 self.logger.info(f"""
 Oportunidade detectada:
