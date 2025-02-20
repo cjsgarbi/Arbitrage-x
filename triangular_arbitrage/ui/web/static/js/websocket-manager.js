@@ -141,18 +141,24 @@ class WebSocketManager {
     }
 
     connect() {
-        if (this.ws?.readyState === WebSocket.OPEN || this.isConnecting) return;
+        if (this.ws?.readyState === WebSocket.OPEN || this.isConnecting) {
+            console.log('WebSocket: Já conectado ou tentando conectar');
+            return;
+        }
         
         this.isConnecting = true;
         this.connectionStatus.state = 'CONNECTING';
-        const wsUrl = `ws://${window.location.host}/ws`;
+        
+        // Usa protocolo correto baseado no protocolo da página
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const wsUrl = `${protocol}//${window.location.host}/ws`;
         
         try {
-            console.log('Tentando conectar ao WebSocket:', wsUrl);
+            console.log('WebSocket: Iniciando conexão com', wsUrl);
             this.ws = new WebSocket(wsUrl);
             
             this.ws.onopen = () => {
-                console.log('WebSocket conectado com sucesso');
+                console.log('WebSocket: Conexão estabelecida');
                 this.isConnecting = false;
                 this.reconnectAttempts = 0;
                 this._updateConnectionStatus(true);
@@ -160,12 +166,15 @@ class WebSocketManager {
                 this.connectionStatus.state = 'CONNECTED';
                 
                 // Reinscreve em todos os tópicos
+                console.log('WebSocket: Reinscrevendo em tópicos...');
                 this._resubscribeAll();
             };
             
             this.ws.onmessage = (event) => {
                 try {
+                    console.log('WebSocket mensagem recebida:', event.data);
                     const data = JSON.parse(event.data);
+                    console.log('Dados parseados:', data);
                     this._handleMessage(data);
                 } catch (error) {
                     console.error('Erro ao processar mensagem:', error);
@@ -269,12 +278,14 @@ class WebSocketManager {
     }
 
     _handleMessage(data) {
+        console.log('WebSocket: Mensagem recebida', { type: data.type });
         this.lastMessageTime = Date.now();
         this.connectionStatus.lastActivity = Date.now();
         
         if (data.type === 'ping') {
             if (this.ws?.readyState === WebSocket.OPEN) {
-                this.ws.send(JSON.stringify({ 
+                console.log('WebSocket: Respondendo ping');
+                this.ws.send(JSON.stringify({
                     type: 'pong',
                     timestamp: Date.now()
                 }));
@@ -283,6 +294,10 @@ class WebSocketManager {
         }
 
         if (!this.isShuttingDown) {
+            console.log('WebSocket: Adicionando mensagem ao buffer', {
+                type: data.type,
+                dataLength: data.data?.length || 0
+            });
             this.messageBuffer.push(data);
             this._updateConnectionStatus(true);
         }
@@ -297,10 +312,19 @@ class WebSocketManager {
         }
 
         if (type === 'opportunities' && data.data) {
+            console.log('Oportunidades recebidas:', data.data);
+            console.log('Total de oportunidades:', data.data.length);
+            
+            // Amostra da primeira oportunidade para debug
+            if (data.data.length > 0) {
+                console.log('Exemplo de oportunidade:', data.data[0]);
+            }
+            
             this._updateOpportunities(data.data);
             
-            if (data.metrics) {
-                this._updateMetrics(data.metrics);
+            if (data.metadata) {
+                console.log('Metadata recebido:', data.metadata);
+                this._updateMetrics(data.metadata);
             }
         }
 
@@ -325,57 +349,50 @@ class WebSocketManager {
         }
     }
 
-    _updateOpportunities(opportunities) {
-        if (!Array.isArray(opportunities)) {
+    _processMessage(data) {
+        const type = data.type;
+        console.log('Processando mensagem do tipo:', type);
+
+        if (type === 'pong') {
+            this._updateConnectionStatus(true);
             return;
         }
-        
-        const tableBody = document.getElementById('arbitrage-pairs-table');
-        if (!tableBody) {
-            return;
+
+        try {
+            // Log detalhado das oportunidades recebidas
+            if (type === 'opportunities' && data.data) {
+                console.log('Oportunidades recebidas:', data.data.length);
+                if (data.data.length > 0) {
+                    console.log('Primeira oportunidade:', JSON.stringify(data.data[0], null, 2));
+                }
+            }
+
+            // Encaminha dados para subscribers
+            const subscribers = this.subscribers.get(type);
+            if (subscribers) {
+                subscribers.forEach(callback => {
+                    try {
+                        callback(data.data);
+                    } catch (error) {
+                        console.error('Erro ao executar callback:', error);
+                    }
+                });
+            }
+        } catch (error) {
+            console.error('Erro ao processar mensagem:', error);
         }
 
-        tableBody.innerHTML = '';
-
-        opportunities.forEach(opp => {
-            const row = document.createElement('tr');
-            const profitColor = parseFloat(opp.profit) > 0 ? 'text-green-500' : 'text-red-500';
-            const status = parseFloat(opp.profit) > 0 ? 'active' : 'inactive';
-
-            row.innerHTML = `
-                <td class="px-6 py-4 whitespace-nowrap">
-                    <div class="flex items-center">
-                        <div class="text-sm font-medium text-gray-900">
-                            ${opp.a_step_from} → ${opp.b_step_from} → ${opp.c_step_from}
-                        </div>
-                    </div>
-                </td>
-                <td class="px-6 py-4 whitespace-nowrap">
-                    <div class="text-sm ${profitColor}">${parseFloat(opp.profit).toFixed(3)}%</div>
-                </td>
-                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    ${parseFloat(opp.a_volume).toFixed(8)}
-                </td>
-                <td class="px-6 py-4 whitespace-nowrap">
-                    <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                        status === 'active' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-                    }">
-                        ${status}
-                    </span>
-                </td>
-                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    ${opp.latency}ms
-                </td>
-            `;
-            
-            tableBody.appendChild(row);
-        });
-
-        const countEl = document.getElementById('opportunities-count');
-        if (countEl) {
-            const activeCount = opportunities.filter(o => parseFloat(o.profit) > 0).length;
-            countEl.textContent = `${activeCount}/${opportunities.length}`;
-        }
+            // Processa e encaminha dados para arbitrage-table.js
+            const subscribers = this.subscribers.get(type);
+            if (subscribers) {
+                subscribers.forEach(callback => {
+                    try {
+                        callback(data.data);
+                    } catch (error) {
+                        console.error('Erro ao processar dados em arbitrage-table:', error);
+                    }
+                });
+            }
     }
 
     _updateMetrics(metrics) {

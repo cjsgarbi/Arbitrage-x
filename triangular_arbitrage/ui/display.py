@@ -66,11 +66,17 @@ class Display:
             caption="Atualizado em tempo real"
         )
 
-        # Colunas
-        table.add_column("Rota", style="cyan", width=30)
-        table.add_column("Lucro %", justify="right", width=10)
-        table.add_column("Volume", justify="right", width=15)
-        table.add_column("Status", style="green", width=10)
+        # Colunas com todas as métricas
+        table.add_column("Rota de Arbitragem", style="cyan", width=35)
+        table.add_column("Profit Esperado", justify="right", style="green", width=15)
+        table.add_column("Profit Real", justify="right", style="yellow", width=12)
+        table.add_column("Slippage", justify="right", style="red", width=10)
+        table.add_column("Tempo Exec.", justify="right", style="blue", width=12)
+        table.add_column("Liquidez", justify="right", style="magenta", width=12)
+        table.add_column("Risco", justify="right", style="red", width=8)
+        table.add_column("Spread", justify="right", style="yellow", width=10)
+        table.add_column("Volatilidade", justify="right", style="magenta", width=12)
+        table.add_column("Confiança", justify="right", style="green", width=10)
 
         if not opportunities:
             table.add_row(

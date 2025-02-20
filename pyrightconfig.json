@@ -2,20 +2,21 @@
     "include": [
         "triangular_arbitrage"
     ],
-    "executionEnvironments": [
-        {
-            "root": ".",
-            "extraPaths": [
-                ".",
-                "./venv/Lib/site-packages"
-            ]
-        }
+    "exclude": [
+        "**/node_modules",
+        "**/__pycache__",
+        "ruby_executor"
     ],
-    "typeCheckingMode": "basic",
-    "useLibraryCodeForTypes": true,
-    "reportMissingImports": "warning",
-    "reportUnknownMemberType": "none",
-    "pythonVersion": "3.10",
+    "ignore": [
+        "tests"
+    ],
+    "reportMissingImports": true,
+    "reportMissingTypeStubs": false,
+    "pythonVersion": "3.8",
+    "pythonPlatform": "All",
     "venvPath": ".",
-    "venv": "venv"
+    "extraPaths": [
+        ".",
+        "./triangular_arbitrage"
+    ]
 }

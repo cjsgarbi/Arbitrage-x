@@ -1,17 +1,17 @@
-# Byte-compiled / optimized / DLL files
+# Ambiente e Configurações
+.env
+.env.*
+!.env.example
+.venv/
+venv/
+ENV/
+
+# Arquivos Python
 __pycache__/
 *.py[cod]
 *$py.class
-*.orig
-
-# C extensions
 *.so
-
-# Distribution / packaging
 .Python
-.pytest_cache/
-env/
-build/
 develop-eggs/
 dist/
 downloads/
@@ -27,225 +27,79 @@ wheels/
 .installed.cfg
 *.egg
 
-# PyInstaller
-#  Usually these files are written by a python script from a template
-#  before PyInstaller builds the exe, so as to inject date/other infos into it.
-*.manifest
-# *.spec
+# Diretórios de dados e logs
+data/
+logs/
+debug_logs/
+*.log
+*.db
+*.sqlite3
+backups/
 
-# Installer logs
-pip-log.txt
-pip-delete-this-directory.txt
-
-# Unit test / coverage reports
-htmlcov/
-.tox/
+# Cache e temporários
+.cache/
+.pytest_cache/
 .coverage
-.coverage.*
-.cache
-nosetests.xml
+htmlcov/
 coverage.xml
 *.cover
 .hypothesis/
 
-# Translations
-*.mo
-*.pot
-
-# Django stuff:
-*.log
-local_settings.py
-
-# Flask stuff:
-instance/
-.webassets-cache
-
-# Scrapy stuff:
-.scrapy
-
-# Sphinx documentation
-docs/_build/
-
-# PyBuilder
-target/
-
-# Jupyter Notebook
-.ipynb_checkpoints
-
-# pyenv
-.python-version
-
-# celery beat schedule file
-celerybeat-schedule
-
-# SageMath parsed files
-*.sage.py
-
-# virtualenv
-.venv
-venv/
-ENV/
-
-# Spyder project settings
-.spyderproject
-.spyproject
-
-# Rope project settings
-.ropeproject
-
-# mkdocs documentation
-/site
-
-# mypy
-.mypy_cache/
-
-# IDE
-.vscode/
-.idea
-.gitpod.yml
-
-# Tentacles manager temporary files
-octobot/creator_temp/
-creator_temp/
-
-# Data
-backtesting/collector/data/
-backtesting/data/
-report.html
-
-# Tentacles
-tentacles
-downloaded_temp_tentacles
-
-# User config
-user/
-temp_config.json
-
-*.csv
-*.ods
-*.c
-*.h
-
-# OctoBot logs
-logs
-
-# Debug
-cython_debug/
-
-# env
-.env
-.env.local
-
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-
-# Virtual Environment
-venv/
-ENV/
-env/
-.env
-.venv
-env.bak/
-venv.bak/
-
-# IDE e Editores
+# IDEs e editores
 .idea/
 .vscode/
 *.swp
 *.swo
 *~
+.vs/
+.project
+.classpath
+.settings/
+*.sublime-workspace
+*.sublime-project
 
-# Logs e Dados
-*.log
-logs/
-debug_logs/
-*.db
-data/
-*.sqlite3
-connections.log
-error.log
-events.log
-dashboard_events.json
-trades.json
-
-# Arquivos de Configuração Sensíveis
-config.ini
-secrets.yaml
-*.pem
-*.key
-*.crt
-
-# Arquivos de Cache
-.pytest_cache/
-.coverage
-htmlcov/
-.tox/
-.nox/
-.coverage.*
-.cache
-nosetests.xml
-coverage.xml
-*.cover
-*.py,cover
-.hypothesis/
-.pytest_cache/
-cover/
-
-# Arquivos do Sistema
-.DS_Store
-Thumbs.db
-desktop.ini
-
-# Arquivos de Backup
-*.bak
-*.backup
-*~
-*.swp
-*.swo
-
-# Arquivos Temporários
-tmp/
-temp/
-*.tmp
-*.temp
-
-# Arquivos de Dependências
+# Node e JavaScript
 node_modules/
-package-lock.json
-yarn.lock
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.npm/
+.yarn/
 
-# Arquivos de Produção
-/production.env
-/staging.env
-/development.env
-
-# Binários e Compilados
+# Arquivos de build
+build/
+dist/
 *.pyc
 *.pyo
 *.pyd
-*.so
-*.dll
-*.dylib
 
-# Diretórios específicos do projeto
-ruby_executor/tmp/
-data/backups/
+# Arquivos do sistema
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Arquivos de teste e debug
+test_*.json
+debug_*.json
+*.test.*
+debug_output/
+
+# Arquivos de configuração específicos
+config.local.json
+local_settings.py
+
+# Arquivos de segurança
+*.key
+*.pem
+*.cert
+*.crt
+*.p12
+
+# Outros
+*.bak
+*.tmp
+*.temp
+*.old
+*.orig
+.*.sw[a-p]

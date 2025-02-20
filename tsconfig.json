@@ -9,22 +9,23 @@
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
     "moduleResolution": "node",
-    "types": ["node", "jest", "@playwright/test"],
+    "types": ["node"],
     "baseUrl": ".",
     "paths": {
       "*": ["node_modules/*"]
     },
-    "allowJs": false,
+    "allowJs": true,
+    "checkJs": false,
     "outDir": "./dist",
     "rootDir": "."
   },
   "include": [
-    "tests/e2e/**/*.ts",
-    "playwright.config.ts"
+    "./triangular_arbitrage/ui/web/static/js/*.js",
+    "./triangular_arbitrage/ui/web/static/js/services/*.js",
+    "./triangular_arbitrage/libs/BotCore.js"
   ],
   "exclude": [
     "node_modules",
-    "dist",
-    "**/*.js"
+    "dist"
   ]
 }

@@ -4,7 +4,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 import json
 import asyncio
-from typing import Dict, List
+from typing import Dict, List, Optional, Union, Any
 from datetime import datetime, timedelta
 import logging
 from pathlib import Path
@@ -99,23 +99,43 @@ class ConnectionManager:
     async def broadcast(self, message: dict):
         """Envia mensagem para todos os clientes conectados"""
         if not self.active_connections:
+            logger.debug("Nenhuma conexão ativa para broadcast")
             return
             
         async with self._lock:
+            logger.debug(f"Iniciando broadcast para {len(self.active_connections)} conexões")
+            start_time = time.time()
+            
             disconnected = []
+            success_count = 0
+            
             for connection in self.active_connections:
                 try:
-                    await connection.send_text(json.dumps(message))
+                    # Serializa a mensagem uma vez para cada conexão
+                    message_text = json.dumps(message)
+                    await connection.send_text(message_text)
                     self.connection_stats['messages_sent'] += 1
                     self._last_activity[id(connection)] = time.time()
+                    success_count += 1
                 except Exception as e:
-                    logger.error(f"Erro ao enviar mensagem: {e}")
+                    logger.error(f"Erro ao enviar mensagem para conexão {id(connection)}: {e}")
                     self.connection_stats['errors'] += 1
                     disconnected.append(connection)
 
             # Remove conexões com erro
             for conn in disconnected:
+                logger.warning(f"Removendo conexão com erro: {id(conn)}")
                 await self.disconnect(conn)
+
+            # Log do resultado do broadcast
+            duration = (time.time() - start_time) * 1000
+            logger.debug(f"""
+                Broadcast concluído:
+                - Tempo total: {duration:.2f}ms
+                - Envios com sucesso: {success_count}
+                - Falhas: {len(disconnected)}
+                - Conexões restantes: {len(self.active_connections)}
+            """)
 
     async def _monitor_connection(self, websocket: WebSocket):
         """Monitora uma conexão específica e mantém heartbeat"""
@@ -218,14 +238,22 @@ class WebDashboard:
             'messages_sent': 0
         }
         
-        # CORS configuration
+        # CORS configuration com logs detalhados
         self.app.add_middleware(
             CORSMiddleware,
             allow_origins=["*"],
             allow_credentials=True,
             allow_methods=["*"],
             allow_headers=["*"],
+            expose_headers=["*"],
         )
+        
+        # Log todas as origens das requisições
+        @self.app.middleware("http")
+        async def log_requests(request, call_next):
+            self.logger.debug(f"Request recebida de: {request.client.host}, método: {request.method}, path: {request.url.path}")
+            response = await call_next(request)
+            return response
         
         # Mount static folder
         static_path = Path(__file__).parent / "static"
@@ -297,7 +325,9 @@ class WebDashboard:
 
     async def _broadcast_data(self):
         """Broadcast data para clientes WebSocket com otimizações e ajuste dinâmico"""
-        broadcast_interval = 0.1  # 100ms inicial
+        broadcast_interval = 1.0  # 1 segundo inicial
+        min_interval = 0.5  # Mínimo de 500ms
+        max_interval = 2.0  # Máximo de 2 segundos
         
         while not self._cleanup_event.is_set():
             try:
@@ -319,30 +349,156 @@ class WebDashboard:
                     await asyncio.sleep(1)
                     continue
 
-                # Obtém e valida oportunidades
-                opportunities = getattr(self.bot_core, 'opportunities', [])
-                self.logger.info(f"Oportunidades detectadas: {len(opportunities)}")
+                try:
+                    # Obtém e valida oportunidades
+                    opportunities = getattr(self.bot_core, 'opportunities', [])
+                    self.logger.info(f"Oportunidades detectadas: {len(opportunities)}")
+                    
+                    # Log detalhado para debug do formato dos dados
+                    if opportunities:
+                        self.logger.debug("Exemplo de estrutura das oportunidades:")
+                        self.logger.debug(json.dumps(opportunities[0], indent=2))
+                        self.logger.debug("Status do bot_core:")
+                        self.logger.debug(f"is_connected: {self.bot_core.is_connected}")
+                        self.logger.debug(f"ai_status: {self.bot_core.get_ai_status()}")
+                    
+                    if not opportunities:
+                        self.logger.debug("Nenhuma oportunidade disponível para broadcast")
+                        # Envia mensagem vazia para manter o frontend atualizado
+                        await self.manager.broadcast({
+                            'type': 'opportunities',
+                            'data': [],
+                            'metadata': {
+                                'total_pairs': len(getattr(self.bot_core, 'symbol_pairs', set())),
+                                'active_pairs': 0,
+                                'monitored_pairs': 0,
+                                'update_timestamp': datetime.now().isoformat()
+                            }
+                        })
+                        await asyncio.sleep(broadcast_interval)
+                        continue
+
+                    # Log detalhado para debug
+                    self.logger.debug("Detalhes das oportunidades detectadas:")
+                    for opp in opportunities[:5]:
+                        self.logger.debug(f"""
+                            ID: {opp.get('id')}
+                            Rota: {opp.get('route')}
+                            Profit: {opp.get('profit')}%
+                            Volume: {opp.get('a_volume')}
+                            Latência: {opp.get('latency')}ms
+                        """)
+
+                    # Formata oportunidades antes do envio
+                except Exception as e:
+                    self.logger.error(f"Erro ao processar oportunidades: {e}")
+                    self.logger.error(f"Detalhes do erro: {traceback.format_exc()}")
+                    await asyncio.sleep(1)
+                    continue
+
+                all_pairs = list(self.bot_core.symbol_pairs)[:10]  # Limita a 10 grupos
+                formatted_opportunities = []
                 
-                if not opportunities:
-                    self.logger.debug("Nenhuma oportunidade disponível para broadcast")
-                
-                # Log detalhado das primeiras 5 oportunidades
-                for opp in opportunities[:5]:
-                    self.logger.debug(f"Oportunidade: {opp.get('a_step_from')}→{opp.get('b_step_from')}→{opp.get('c_step_from')} | Profit: {opp.get('profit')}%")
-                
-                # Prepara dados para envio
-                message = {
+                # Processa cada par dos 10 selecionados
+                for pair in all_pairs:
+                    # Encontra oportunidades relacionadas ao par
+                    pair_opportunities = [opp for opp in opportunities
+                                      if pair in [opp.get('a_step_from'), opp.get('b_step_from'), opp.get('c_step_from')]]
+                    
+                    try:
+                        latest_price = self.bot_core.price_cache.get(pair, {}).get('price', 0)
+                        latest_volume = self.bot_core.price_cache.get(pair, {}).get('volume', 0)
+                        latest_timestamp = self.bot_core.price_cache.get(pair, {}).get('timestamp', time.time())
+                        
+                        if pair_opportunities:
+                            for opp in pair_opportunities:
+                                try:
+                                    # Extrai dados da oportunidade com valores padrão
+                                    profit = float(opp.get('profit', 0))
+                                    volume = float(opp.get('a_volume', 0))
+                                    latency = float(opp.get('latency', 0))
+                                    
+                                    # Formata a oportunidade com todos os campos necessários
+                                    formatted_opp: Dict[str, Union[str, float, int]] = {
+                                        'id': opp.get('id', str(time.time())),
+                                        'route': f"{opp.get('a_step_from')}→{opp.get('b_step_from')}→{opp.get('c_step_from')}",
+                                        'profit': profit,
+                                        'volume': volume,
+                                        'price': float(opp.get('a_rate', 0)),
+                                        'slippage': 0.005,
+                                        'executionTime': latency / 1000,
+                                        'liquidity': self._calculate_liquidity_level(volume),
+                                        'risk': self._calculate_risk_level(profit, volume),
+                                        'spread': 0.0,
+                                        'volatility': self._calculate_volatility_risk(opp),
+                                        'confidence': self._calculate_confidence(profit),
+                                        'timestamp': opp.get('timestamp', datetime.now().isoformat()),
+                                        'status': 'active' if profit > 0 else 'inactive'
+                                    }
+                                    
+                                    formatted_opportunities.append(formatted_opp)
+                                    
+                                except Exception as e:
+                                    self.logger.error(f"Erro ao formatar oportunidade: {e}")
+                                    continue
+                    except (ValueError, TypeError) as e:
+                        self.logger.error(f"❌ Erro ao processar par {pair}: {e}")
+                        continue
+
+                # Prepara mensagem com metadados atualizados
+                message: Dict[str, Any] = {
                     'type': 'opportunities',
-                    'data': opportunities,
+                    'data': formatted_opportunities,
                     'metadata': {
-                        'total_pairs': len(getattr(self.bot_core, 'symbol_pairs', set())),
-                        'active_pairs': len([opp for opp in opportunities if opp.get('status') == 'active']),
+                        'total_pairs': len(all_pairs),
+                        'active_pairs': len([opp for opp in formatted_opportunities if opp['status'] == 'active']),
+                        'monitored_pairs': len(formatted_opportunities),
                         'update_timestamp': datetime.now().isoformat()
                     }
                 }
+                
+                self.logger.debug(f"Preparando broadcast para {len(self.manager.active_connections)} conexões")
+                self.logger.debug(f"Dados a serem enviados: {len(formatted_opportunities)} oportunidades")
+                if formatted_opportunities:
+                    self.logger.debug(f"Primeira oportunidade: {json.dumps(formatted_opportunities[0], indent=2)}")
 
-                # Broadcast para todos os clientes
-                await self.manager.broadcast(message)
+                # Verifica conexões ativas antes do broadcast
+                if not self.manager.active_connections:
+                    self.logger.warning("Nenhuma conexão WebSocket ativa. Pulando broadcast.")
+                    await asyncio.sleep(broadcast_interval)
+                    continue
+
+                try:
+                    start_broadcast = time.time()
+                    # Broadcast para todos os clientes
+                    await self.manager.broadcast(message)
+                    broadcast_duration = (time.time() - start_broadcast) * 1000
+
+                    # Ajusta intervalo baseado no tempo de processamento
+                    if broadcast_duration > 500:  # Se demorou mais de 500ms
+                        broadcast_interval = min(broadcast_interval * 1.2, max_interval)
+                        self.logger.warning(f"Aumentando intervalo para {broadcast_interval:.2f}s devido à latência alta")
+                    elif broadcast_duration < 100:  # Se foi rápido (<100ms)
+                        broadcast_interval = max(broadcast_interval * 0.8, min_interval)
+                        self.logger.debug(f"Reduzindo intervalo para {broadcast_interval:.2f}s")
+
+                    # Log detalhado do broadcast
+                    self.logger.info(f"""
+                        Broadcast realizado:
+                        - Total de oportunidades: {len(formatted_opportunities)}
+                        - Oportunidades ativas: {message['metadata']['active_pairs']}
+                        - Conexões ativas: {len(self.manager.active_connections)}
+                        - Tempo de broadcast: {broadcast_duration:.2f}ms
+                        - Próximo intervalo: {broadcast_interval:.2f}s
+                    """)
+                    
+                    # Atualiza métricas
+                    self._broadcast_metrics['latency'].append(broadcast_duration / 1000)
+                    if len(self._broadcast_metrics['latency']) > 100:
+                        self._broadcast_metrics['latency'] = self._broadcast_metrics['latency'][-100:]
+                except Exception as e:
+                    self.logger.error(f"Erro durante broadcast: {e}")
+                    self.logger.error(traceback.format_exc())
                 
                 # Log de performance
                 broadcast_time = (time.time() - start_time) * 1000

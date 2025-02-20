@@ -8,7 +8,7 @@ scikit-learn>=1.2.2     # Para ML
 pandas>=2.1.0           # Para análise de dados
 openrouter>=0.3.0       # Cliente OpenRouter para IA
 emoji==0.6.0            # Para processamento de emojis
-#xformers>=0.0.22        # Para otimização de atenção
+xformers>=0.0.22        # Para otimização de atenção
 
 # Banco de Dados e Cache
 SQLAlchemy>=2.0.25      # ORM para banco de dados
