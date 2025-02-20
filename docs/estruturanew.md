@@ -17,7 +17,7 @@ triangular_arbitrage/
 │   ├── events_core.py    # Gerenciamento de eventos
 │   └── currency_core.py  # Processamento de moedas
 ├── ui/                    # Interface do usuário
-│   ├── display.py        # Formatação de dados
+│   ├── display.py        # Formatação de dados exibidos no terminal
 │   └── web/              # Dashboard web
 │       ├── app.py        # Servidor FastAPI
 │       └── static/       # Assets web
@@ -75,3 +75,6 @@ triangular_arbitrage/
 8. Frontend processa e exibe dados
 
 Esta estrutura representa o fluxo completo, funcional e validado desde a análise pela IA até a exibição no frontend, incluindo todos os componentes essenciais de validação e monitoramento.
+
+
+ATENÇÃO !!!! Inicie aqui a cada estapa concluida : Não mude os itens e subitens  do memory2 jamais, voce deve inprementar todos esses itens usando as melhores praticas sempre  mantendo o restante do repo e focando nos objetivos de memory2 sem fazer mudanças radicas que possam prejudicar o repo, use os aquivos e pastas do repo e não crie arquivos desnecessarios, vc nao pode fazer nada sem antes consultar o memory2.md , faça por etapa de eliminaçao marcando os itens imprementados com um (x),antes de marcar teste as iprementações buscando a existencias de erros, na ausencia de erros  passe para proxima etapa ate terminar o objetivo de memory2.md sem sair deste roteiro ou sera severamente penalizado.

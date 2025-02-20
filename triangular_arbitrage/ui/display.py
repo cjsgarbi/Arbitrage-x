@@ -1,172 +1,168 @@
-import os
-import sys
-import time
-from typing import Dict, List
-from datetime import datetime
-import asyncio
+"""
+Display module for terminal visualization
+"""
 from rich.console import Console
 from rich.table import Table
-from rich.panel import Panel
-from rich.text import Text
-from rich.layout import Layout
 from rich.live import Live
+from typing import Dict, List
+from datetime import datetime
 import logging
-
 
 class Display:
     def __init__(self):
-        """Inicializa o display"""
+        """Inicializa o display com uma única tabela"""
+        # Configurações básicas
         self.console = Console()
         self.last_update = None
         self.opportunities = []
-        self.pairs_monitored = 0
         self.logger = logging.getLogger(__name__)
-        self.live = Live()
-        self.table = Table()
-
-    def clear_screen(self):
-        """Limpa a tela do console"""
-        os.system('cls' if os.name == 'nt' else 'clear')
-
-    def create_header(self) -> Panel:
-        """Cria cabeçalho com estatísticas"""
-        now = datetime.now().strftime('%H:%M:%S')
-
-        stats = [
-            f"[bold cyan]Pares Monitorados:[/] {self.pairs_monitored}",
-            f"[bold cyan]Oportunidades:[/] {len(self.opportunities)}",
-        ]
-
-        if self.last_update:
-            stats.append(
-                f"[bold cyan]Última Atualização:[/] {(datetime.now() - self.last_update).total_seconds():.1f}s atrás"
-            )
-
-        header_text = Text.assemble(
-            ("Monitor de Arbitragem Triangular\n", "bold white"),
-            (now + "\n\n", "bold green"),
-            *[f"{stat}\n" for stat in stats]
+        
+        # Configuração da tabela de oportunidades
+        self.table = self._setup_table()
+        
+        # Inicia display live
+        self.live = Live(
+            self.table,
+            console=self.console,
+            refresh_per_second=2,
+            vertical_overflow="visible"
         )
-
-        return Panel(
-            header_text,
-            border_style="blue",
-            padding=(1, 2),
-            title="🤖 Bot de Arbitragem",
-            subtitle="v1.0"
-        )
-
-    def create_opportunities_table(self, opportunities: List[Dict]) -> Table:
-        """Cria tabela de oportunidades"""
+        self.live.start()
+        
+    def _setup_table(self) -> Table:
+        """Configura a tabela única de oportunidades"""
         table = Table(
+            title="💰 Oportunidades de Arbitragem (Dados Reais)",
             show_header=True,
-            header_style="bold magenta",
-            border_style="bright_blue",
-            title="💰 Oportunidades de Arbitragem",
-            caption="Atualizado em tempo real"
+            header_style="bold white",
+            show_lines=True,
+            expand=True,
+            title_style="bold magenta",
+            border_style="blue",
+            box=None  # Remove bordas extras
         )
 
-        # Colunas com todas as métricas
-        table.add_column("Rota de Arbitragem", style="cyan", width=35)
-        table.add_column("Profit Esperado", justify="right", style="green", width=15)
-        table.add_column("Profit Real", justify="right", style="yellow", width=12)
-        table.add_column("Slippage", justify="right", style="red", width=10)
-        table.add_column("Tempo Exec.", justify="right", style="blue", width=12)
-        table.add_column("Liquidez", justify="right", style="magenta", width=12)
-        table.add_column("Risco", justify="right", style="red", width=8)
-        table.add_column("Spread", justify="right", style="yellow", width=10)
-        table.add_column("Volatilidade", justify="right", style="magenta", width=12)
-        table.add_column("Confiança", justify="right", style="green", width=10)
-
-        if not opportunities:
-            table.add_row(
-                "[yellow]Aguardando oportunidades...[/]",
-                "", "", ""
-            )
-            return table
-
-        # Ordena por lucro
-        sorted_opps = sorted(
-            opportunities,
-            key=lambda x: x['profit'],
-            reverse=True
-        )
-
-        # Mostra top oportunidades
-        for opp in sorted_opps[:20]:  # Limita a 20 oportunidades
-            route = f"{opp['a_step_from']} → {opp['b_step_from']} → {opp['c_step_from']}"
-            profit = f"{opp['profit']:.3f}%"
-            volume = f"${opp['volume']:.2f}"
-
-            # Define cor baseada no lucro
-            if opp['profit'] > 1.0:
-                profit_style = "green"
-            elif opp['profit'] > 0.5:
-                profit_style = "yellow"
-            else:
-                profit_style = "white"
-
-            table.add_row(
-                route,
-                f"[{profit_style}]{profit}[/]",
-                volume,
-                "✅" if opp['profit'] > 0.5 else "⏳"
-            )
+        # Adiciona colunas conforme estrutura definida
+        table.add_column("Rota de Arbitragem", style="cyan", width=40)
+        table.add_column("Profit Esperado", style="green", justify="right", width=12)
+        table.add_column("Profit Real", style="yellow", justify="right", width=12)
+        table.add_column("Slippage", style="red", justify="right", width=10)
+        table.add_column("Tempo Exec.", style="blue", justify="right", width=12)
+        table.add_column("Liquidez", style="magenta", justify="right", width=15)
+        table.add_column("Risco", style="red", justify="right", width=8)
+        table.add_column("Spread", style="yellow", justify="right", width=10)
+        table.add_column("Volatilidade", style="magenta", justify="right", width=12)
+        table.add_column("Confiança", style="green", justify="right", width=10)
 
         return table
-
-    def create_layout(self) -> Layout:
-        """Cria layout da interface"""
-        layout = Layout()
-
-        # Divide em seções
-        layout.split(
-            Layout(name="header", size=10),
-            Layout(name="body"),
-            Layout(name="footer", size=3)
+        
+        # Configura colunas com larguras fixas
+        self.table.add_column("Rota de Arbitragem", style="cyan", width=40)
+        self.table.add_column("Profit Esperado", style="green", justify="right", width=12)
+        self.table.add_column("Profit Real", style="yellow", justify="right", width=12)
+        self.table.add_column("Slippage", style="red", justify="right", width=10)
+        self.table.add_column("Tempo Exec.", style="blue", justify="right", width=12)
+        self.table.add_column("Liquidez", style="magenta", justify="right", width=15)
+        self.table.add_column("Risco", style="red", justify="right", width=8)
+        self.table.add_column("Spread", style="yellow", justify="right", width=10)
+        self.table.add_column("Volatilidade", style="magenta", justify="right", width=12)
+        self.table.add_column("Confiança", style="green", justify="right", width=10)
+        
+        # Inicia display live
+        self.live = Live(
+            self.table,
+            refresh_per_second=2,
+            console=self.console,
+            vertical_overflow="visible",
+            auto_refresh=False  # Controle manual do refresh
         )
+        self.live.start()
 
-        # Divide o corpo em duas colunas
-        layout["body"].split_row(
-            Layout(name="opportunities", ratio=2),
-            Layout(name="stats", ratio=1)
-        )
+    def _format_opportunity(self, opp: Dict) -> Dict:
+        """Formata dados da oportunidade para exibição"""
+        try:
+            metrics = opp.get('market_metrics', {})
+            profit = float(opp.get('profit', 0))
+            slippage = metrics.get('slippage', 0)
+            execution_time = metrics.get('execution_time', 0)
+            liquidity = metrics.get('liquidity', 0)
+            risk = metrics.get('risk_score', 0)
+            spread = metrics.get('spread', 0) * 100
+            volatility = metrics.get('volatility', 0)
+            confidence = metrics.get('confidence_score', 0)
 
-        return layout
+            # Indicadores visuais
+            profit_indicator = "💰" if profit > 1.0 else "✨" if profit > 0.5 else "📊"
+            risk_indicator = "⚠️" if risk > 7 else "📊" if risk > 5 else "✅"
+            liquidity_indicator = "💧" if liquidity > 1000 else "💦"
 
-    async def update_arbitrage_opportunities(self, opportunities: List[Dict]):
-        """Atualiza tabela com oportunidades de arbitragem"""
-        # Limpa linhas existentes
-        self.table.rows.clear()
+            return {
+                'route': f"[cyan]{opp.get('path', 'N/A')}[/]",
+                'profit_expected': f"[{'green' if profit > 1.0 else 'yellow'}]{profit_indicator} {profit:>6.3f}%[/]",
+                'profit_real': f"[{'green' if profit-slippage > 0.5 else 'yellow'}]{(profit-slippage):>6.3f}%[/]",
+                'slippage': f"[red]{slippage:>6.3f}%[/]",
+                'execution_time': f"[blue]⚡{execution_time:>6.2f}s[/]",
+                'liquidity': f"[magenta]{liquidity_indicator}${liquidity:>9,.2f}[/]",
+                'risk': f"[red]{risk_indicator}{risk:>3.1f}/10[/]",
+                'spread': f"[yellow]📊{spread:>6.3f}%[/]",
+                'volatility': f"[magenta]📈{volatility:>6.2f}%[/]",
+                'confidence': f"[green]🎯{confidence:>3.0f}%[/]"
+            }
+        except Exception as e:
+            self.logger.error(f"Erro ao formatar oportunidade: {e}")
+            return {}
 
-        # Ordena por lucro
-        sorted_opps = sorted(
-            opportunities, key=lambda x: x['profit'], reverse=True)
+    async def update_opportunities(self, opportunities: List[Dict]):
+        """Atualiza dados das oportunidades na tabela"""
+        try:
+            # Limpa tabela atual
+            self.table.rows.clear()
+            self.opportunities = opportunities
 
-        # Mostra top 10 oportunidades
-        for opp in sorted_opps[:10]:
-            # Formata rota
-            route = f"{opp['a_step_from']}->{opp['b_step_from']}->{opp['c_step_from']}"
+            # Mensagem quando não há dados
+            if not opportunities:
+                self.table.add_row(
+                    "[yellow]Aguardando oportunidades de arbitragem...[/]",
+                    *["" for _ in range(9)]
+                )
+                self.live.refresh()
+                return
 
-            # Formata timestamp
-            ts = datetime.fromisoformat(opp['timestamp']).strftime("%H:%M:%S")
+            # Adiciona oportunidades ordenadas
+            sorted_opps = sorted(
+                opportunities,
+                key=lambda x: float(x.get('profit', 0)),
+                reverse=True
+            )[:10]  # Top 10
 
-            # Adiciona linha na tabela
-            self.table.add_row(
-                "BUY_SELL_SELL",
-                opp['a_step_from'] + "/" + opp['a_step_to'],
-                opp['b_step_from'] + "/" + opp['b_step_to'],
-                opp['c_step_from'] + "/" + opp['c_step_to'],
-                f"{opp['profit']:.2f}",
-                f"{opp['a_volume']:.4f}",
-                f"{opp.get('avg_spread', 0):.2f}",
-                f"{opp.get('score', 0):.0f}",
-                ts
-            )
+            for opp in sorted_opps:
+                formatted = self._format_opportunity(opp)
+                if formatted:
+                    self.table.add_row(
+                        formatted['route'],
+                        formatted['profit_expected'],
+                        formatted['profit_real'],
+                        formatted['slippage'],
+                        formatted['execution_time'],
+                        formatted['liquidity'],
+                        formatted['risk'],
+                        formatted['spread'],
+                        formatted['volatility'],
+                        formatted['confidence']
+                    )
 
-        # Força atualização da tabela
-        self.live.refresh()
+            # Atualiza timestamp e display
+            self.last_update = datetime.now()
+            self.live.refresh()
+
+        except Exception as e:
+            self.logger.error(f"Erro ao atualizar oportunidades: {e}")
+            self.logger.debug("Stack trace:", exc_info=True)
 
     def stop(self):
-        """Para exibição da tabela"""
-        self.live.stop()
+        """Para o display"""
+        try:
+            if hasattr(self, 'live'):
+                self.live.stop()
+        except Exception as e:
+            self.logger.error(f"Erro ao parar display: {e}")

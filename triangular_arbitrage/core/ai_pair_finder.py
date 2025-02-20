@@ -1,10 +1,14 @@
 import logging
 import time
-from typing import List, Dict, Optional, Any, Union
+from typing import List, Dict, Optional, Any, Union, TYPE_CHECKING
 import asyncio
 from datetime import datetime, timedelta
 import numpy as np
 from transformers import pipeline
+from concurrent.futures import ThreadPoolExecutor
+
+if TYPE_CHECKING:
+    from ..ui.display import Display
 from ..config import BINANCE_CONFIG
 from binance import AsyncClient, BinanceSocketManager
 from binance.exceptions import BinanceAPIException
@@ -83,9 +87,10 @@ class AIPairFinder:
             )
             raise
 
-    async def get_potential_pairs(self) -> List[str]:
+    async def get_potential_pairs(self, bot_display: Optional['Display'] = None) -> List[str]:
         """Retorna lista de pares com potencial de arbitragem"""
         operation_id = debug_logger.start_operation('get_potential_pairs')
+        self.display = bot_display  # Armazena referência ao display do bot
         
         try:
             debug_logger.log_event('cache_check', 'Verificando cache')
@@ -99,9 +104,18 @@ class AIPairFinder:
             pairs = await self._get_binance_pairs()
             debug_logger.log_metric('pairs_found', len(pairs))
             
+            # Inicializa display
+            from ..ui.display import Display
+            display = Display()
+            
             debug_logger.log_event('market_analysis', 'Iniciando análise de mercado')
-            scored_pairs = await self._analyze_market_data(pairs)
+            display.console.print("\n[bold green]Iniciando análise de mercado...[/]\n")
+            
+            scored_pairs = await self._analyze_market_data(pairs, display)
             debug_logger.log_metric('pairs_analyzed', len(scored_pairs))
+            
+            # Atualiza display final
+            display.refresh_display()
             
             if self.sentiment_analyzer:
                 debug_logger.log_event('sentiment_analysis', 'Iniciando análise de sentimento')
@@ -236,8 +250,10 @@ class AIPairFinder:
 
     @handle_errors(retries=3, delay=1.0)
     @circuit_breaker(api_circuit, "analyze_market_data")
-    async def _analyze_market_data(self, pairs: List[str]) -> List[Dict]:
+    async def _analyze_market_data(self, pairs: List[str], bot_display: Optional['Display'] = None) -> List[Dict]:
         """Analisa dados reais de mercado dos pares"""
+        from ..ui.display import Display
+        self.display = bot_display or Display()
         if not pairs:
             raise ValidationError(
                 "Lista de pares vazia",
@@ -335,7 +351,16 @@ class AIPairFinder:
                     }
                 }
 
-                self.logger.info(f"Análise de {pair}: Volume={volume_24h:.2f} USDT, Spread={spread*100:.3f}%, Change={price_change:.2f}%")
+                # Atualiza display com dados formatados
+                # Atualiza display com dados do mercado
+                self.display.update_market_data(pair, {
+                    'volume_24h': volume_24h,
+                    'spread': spread,
+                    'price_change': price_change,
+                    'liquidity_score': volume_24h/100  # Normaliza liquidez
+                })
+                self.display.refresh_display()
+                
                 scored_pairs.append(score)
 
             except (BinanceAPIException, ValidationError, APIError) as e:
@@ -396,10 +421,12 @@ class AIPairFinder:
 
                 # Analisa o par com timeout
                 try:
-                    result = await asyncio.wait_for(
-                        asyncio.to_thread(self.sentiment_analyzer, pair['pair']),
-                        timeout=2.0
-                    )
+                    with ThreadPoolExecutor() as executor:
+                        future = executor.submit(self.sentiment_analyzer, pair['pair'])
+                        result = await asyncio.wait_for(
+                            asyncio.wrap_future(future),
+                            timeout=2.0
+                        )
                 except asyncio.TimeoutError:
                     raise APIError(
                         f"Timeout na análise de sentimento para {pair['pair']}",

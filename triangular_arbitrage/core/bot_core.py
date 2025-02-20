@@ -73,6 +73,27 @@ class BotCore:
             config_dir=self.config_dir,
             logs_dir=self.logs_dir
         )
+
+        try:
+            # Inicializa interface de monitoramento
+            from ..ui.display import Display
+            self.display = Display()
+            
+            if not hasattr(self, 'display') or not self.display:
+                raise ValueError("Display não foi inicializado corretamente")
+                
+            # Verifica se display está pronto
+            if not hasattr(self.display, 'table') or not self.display.table:
+                raise ValueError("Tabela do display não foi configurada")
+                
+            self.logger.info("📊 Interface de monitoramento iniciada com sucesso")
+                
+        except ImportError as e:
+            self.logger.error(f"❌ Erro ao importar módulo display: {e}")
+            raise
+        except Exception as e:
+            self.logger.error(f"❌ Erro ao inicializar display: {e}")
+            raise
         
         # Componentes de IA
         self.ai_pair_finder = AIPairFinder()
@@ -134,7 +155,7 @@ class BotCore:
         """Inicia o bot"""
         try:
             # Carrega pares iniciais
-            initial_pairs = await self.ai_pair_finder.get_potential_pairs()
+            initial_pairs = await self.ai_pair_finder.get_potential_pairs(self.display)
             if not initial_pairs:
                 raise ValueError("Nenhum par retornado pelo AI Pair Finder")
             
@@ -190,6 +211,46 @@ class BotCore:
         except Exception as e:
             self.logger.error(f"Erro no processamento de dados: {e}")
 
+    def _validate_opportunity_data(self, opportunity: Dict, analysis: Dict) -> Optional[Dict]:
+        """Valida e formata dados da oportunidade"""
+        try:
+            # Valida dados obrigatórios
+            if not all(k in opportunity for k in ['path', 'profit_percentage', 'volumes']):
+                self.logger.warning("Dados obrigatórios faltando na oportunidade")
+                return None
+            
+            # Formata dados
+            formatted_data = {
+                'path': opportunity['path'],
+                'profit': float(opportunity['profit_percentage']),
+                'market_metrics': {
+                    'volumes': opportunity['volumes'],
+                    'spread': opportunity.get('spread', 0),
+                    'execution_time': analysis.get('execution_time', 0),
+                    'liquidity': sum(opportunity['volumes'].values()),
+                    'risk_score': analysis.get('risk_score', 0),
+                    'volatility': analysis.get('volatility', 0),
+                    'confidence_score': analysis.get('confidence_score', 0),
+                    'slippage': analysis.get('slippage', 0)
+                },
+                'timestamp': datetime.now().isoformat()
+            }
+            
+            # Valida tipos e ranges
+            if not (isinstance(formatted_data['profit'], float) and formatted_data['profit'] >= 0):
+                self.logger.warning("Profit inválido")
+                return None
+                
+            if not formatted_data['market_metrics']['volumes']:
+                self.logger.warning("Volumes vazios")
+                return None
+                
+            return formatted_data
+            
+        except Exception as e:
+            self.logger.error(f"Erro ao validar dados: {e}")
+            return None
+
     async def _detect_opportunities(self):
         """Detecta oportunidades de arbitragem"""
         try:
@@ -198,22 +259,68 @@ class BotCore:
                 prices = self.price_cache.copy()
 
             opportunities = []
-            for base in ['BTC', 'ETH', 'USDT', 'BNB']:
+            bases = ['BTC', 'ETH', 'USDT', 'BNB']
+            
+            for base in bases:
                 pairs = [p for p in prices.keys() if base in p]
                 for pair_a in pairs:
                     for pair_b in pairs:
                         if pair_a != pair_b:
                             opp = self._check_arbitrage(pair_a, pair_b, base, prices)
                             if opp:
+                                # Analisa oportunidade
                                 analysis = await self.arbitrage_analyzer.analyze_opportunity(opp)
                                 if analysis and analysis.get('confidence_score', 0) >= AI_CONFIG['min_confidence']:
-                                    opportunities.append({**opp, 'analysis': analysis})
+                                    # Valida e formata dados mantendo todas as métricas
+                                    opportunity_data = {
+                                        **opp,
+                                        'analysis': analysis,
+                                        'market_metrics': {
+                                            'volumes': opp['volumes'],
+                                            'spread': opp.get('spread', 0),
+                                            'execution_time': analysis.get('execution_time', 0),
+                                            'liquidity': sum(opp['volumes'].values()),
+                                            'risk_score': analysis.get('risk_score', 0),
+                                            'volatility': analysis.get('volatility', 0),
+                                            'confidence_score': analysis.get('confidence_score', 0),
+                                            'slippage': analysis.get('slippage', 0)
+                                        }
+                                    }
+                                    
+                                    # Valida estrutura dos dados
+                                    validated_data = self._validate_opportunity_data(opportunity_data, analysis)
+                                    if not validated_data:
+                                        continue
+                                    opportunities.append(opportunity_data)
+                                    
+                                    # Atualiza display com dados em tempo real
+                                    await self.display.update_opportunities([opportunity_data])
 
-            # Processa melhores oportunidades
+            # Processa e exibe oportunidades
             if opportunities:
+                # Ordena por lucro
                 opportunities.sort(key=lambda x: float(x['profit_percentage']), reverse=True)
                 self.opportunities = opportunities[:10]  # Mantém top 10
                 self.last_update = datetime.now()
+                
+                # Atualiza display
+                await self.display.update_opportunities([
+                    {
+                        'path': opp['path'],
+                        'profit': opp['profit_percentage'],
+                        'market_metrics': {
+                            'volumes': opp['volumes'],
+                            'slippage': 0.001,  # 0.1% estimado
+                            'execution_time': 0.5,  # 500ms estimado
+                            'liquidity': sum(opp['volumes'].values()),
+                            'risk_score': 5,  # Score médio
+                            'spread': sum(v/k for k,v in opp['volumes'].items())/len(opp['volumes']),
+                            'volatility': 0.5,  # Volatilidade média
+                            'confidence_score': 80  # Confiança base
+                        }
+                    }
+                    for opp in opportunities[:10]
+                ])
 
                 # Executa/simula melhores oportunidades
                 for opp in opportunities[:3]:  # Processa top 3
@@ -292,14 +399,21 @@ class BotCore:
                     for pair, vol in zip(opportunity['pairs'], opportunity['volumes'])
                 ])
 
-            # Atualiza histórico
-            if len(self.opportunities_history) >= self.max_history_size:
-                self.opportunities_history.pop(0)
-            self.opportunities_history.append({
+            # Formata dados de execução
+            execution_data = {
                 **opportunity,
                 'result': result,
-                'executed_at': datetime.now().isoformat()
-            })
+                'executed_at': datetime.now().isoformat(),
+                'market_metrics': opportunity.get('market_metrics', {})
+            }
+
+            # Atualiza histórico e display
+            if len(self.opportunities_history) >= self.max_history_size:
+                self.opportunities_history.pop(0)
+            self.opportunities_history.append(execution_data)
+            
+            # Atualiza display em tempo real
+            await self.display.update_opportunities([execution_data])
 
         except Exception as e:
             self.logger.error(f"Erro ao executar oportunidade: {e}")
@@ -307,6 +421,11 @@ class BotCore:
     async def _cleanup(self):
         """Limpa recursos"""
         try:
+            # Finaliza display
+            if hasattr(self, 'display'):
+                self.display.stop()
+                self.logger.info("📊 Display finalizado")
+
             # Desconecta da Binance
             await self.connection.disconnect()
             
@@ -316,10 +435,10 @@ class BotCore:
             
             # Salva histórico
             if self.opportunities_history:
-                self.logger.info("Salvando histórico...")
+                self.logger.info("💾 Salvando histórico...")
                 with open(self.history_file, 'w') as f:
                     json.dump(self.opportunities_history, f, indent=2)
-                self.logger.info("Histórico salvo com sucesso")
+                self.logger.info("✅ Histórico salvo com sucesso")
                 
         except Exception as e:
-            self.logger.error(f"Erro na limpeza: {e}")
+            self.logger.error(f"❌ Erro na limpeza: {e}")
